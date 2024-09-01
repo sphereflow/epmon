@@ -26,7 +26,7 @@ embedded-hal-async = { version = "1" }
 embedded-svc = { version = "0.28", default-features = false, features = [] }
 embedded-io = "0.6.1"
 embassy-time = "0.3"
-embassy-executor = { version = "0.6", features = ["task-arena-size-5120"] }
+embassy-executor = { version = "0.6", features = ["task-arena-size-6144"] }
 embassy-net = { version = "0.4", features = [
   "tcp",
   "udp",
