@@ -38,7 +38,6 @@ extern crate alloc;
 pub mod command;
 pub mod max485;
 pub mod ringbuffer;
-pub mod tracer_an;
 
 #[global_allocator]
 static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
