@@ -40,7 +40,6 @@ impl Max485Modbus {
             .generate_set_holdings_bulk(reg_address, register_values, &mut request_buffer)
             .map_err(|_e| Max485ModbusError {})?;
         self.write_all(&request_buffer).await?;
-        self.flush().await?;
 
         // reuse the request_buffer for the response buffer
         request_buffer.clear();
@@ -73,7 +72,6 @@ impl Max485Modbus {
             .generate_get_holdings(reg_address, holding_count as u16, &mut request_buffer)
             .map_err(|_error| Max485ModbusError {})?;
         self.write_all(&request_buffer).await?;
-        self.flush().await?;
 
         // reuse the request_buffer for the response buffer
         request_buffer.clear();
@@ -109,7 +107,6 @@ impl Max485Modbus {
             .generate_get_inputs(reg_address, register_count as u16, &mut request_buffer)
             .map_err(|_error| Max485ModbusError {})?;
         self.write_all(&request_buffer).await?;
-        self.flush().await?;
 
         // reuse the request_buffer for the response buffer
         request_buffer.clear();
@@ -146,7 +143,6 @@ impl Max485Modbus {
             .generate_get_coils(reg_address, count.max(8), &mut request_buffer)
             .map_err(|_error| Max485ModbusError {})?;
         self.write_all(&request_buffer).await?;
-        self.flush().await?;
 
         // reuse the request_buffer for the response buffer
         request_buffer.clear();
@@ -180,7 +176,10 @@ impl Write for Max485Modbus {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         self.rw_pin.set_high();
         embassy_time::block_for(Duration::from_micros(3));
-        self.uart.write(buf).await.map_err(|e| e.into())
+        let bytes_written = self.uart.write(buf).await?;
+        self.flush().await?;
+        self.rw_pin.set_low();
+        Ok(bytes_written)
     }
 
     async fn flush(&mut self) -> Result<(), Self::Error> {
@@ -190,7 +189,10 @@ impl Write for Max485Modbus {
     async fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
         self.rw_pin.set_high();
         embassy_time::block_for(Duration::from_micros(3));
-        self.uart.write_all(buf).await.map_err(|e| e.into())
+        self.uart.write_all(buf).await?;
+        self.flush().await?;
+        self.rw_pin.set_low();
+        Ok(())
     }
 }
 
