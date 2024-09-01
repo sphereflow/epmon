@@ -11,22 +11,22 @@ test = false
 bench = false
 
 [dependencies]
-esp-backtrace = { version = "0.13.0", features = [
+esp-backtrace = { version = "0.14.0", features = [
   "esp32c6",
   "exception-handler",
   "panic-handler",
   "println",
   "colors",
 ] }
-esp-hal = { version = "0.19", features = ["esp32c6", "embedded-hal", "async"] }
-esp-println = { version = "0.10", features = ["esp32c6", "log"] }
+esp-hal = { version = "0.20", features = ["esp32c6", "embedded-hal", "async"] }
+esp-println = { version = "0.11", features = ["esp32c6", "log"] }
 log = { version = "0.4.21" }
 esp-alloc = { version = "0.4.0" }
 embedded-hal-async = { version = "1" }
 embedded-svc = { version = "0.28", default-features = false, features = [] }
 embedded-io = "0.6.1"
 embassy-time = "0.3"
-embassy-executor = { version = "0.5", features = ["task-arena-size-5120"] }
+embassy-executor = { version = "0.6", features = ["task-arena-size-5120"] }
 embassy-net = { version = "0.4", features = [
   "tcp",
   "udp",
@@ -34,13 +34,13 @@ embassy-net = { version = "0.4", features = [
   "medium-ethernet",
 ] }
 embassy-sync = "0.6"
-esp-hal-embassy = { version = "0.2", features = [
+esp-hal-embassy = { version = "0.3", features = [
   "esp32c6",
   "log",
   "executors",
   "integrated-timers",
 ] }
-esp-wifi = { version = "0.7", features = [
+esp-wifi = { version = "0.8", features = [
   "esp32c6",
   "phy-enable-usb",
   "utils",
@@ -52,7 +52,7 @@ esp-wifi = { version = "0.7", features = [
 heapless = { version = "0.8.0", default-features = false }
 critical-section = "1"
 static_cell = "2.1"
-esp-hal-smartled = "0.12"
+esp-hal-smartled = "0.13"
 smart-leds = "0.4"
 rmodbus = { version = "0.9", default-features = false, features = ["heapless"] }
 

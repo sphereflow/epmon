@@ -21,7 +21,7 @@ use esp_hal::gpio::{GpioPin, Io, Level, Output};
 use esp_hal::peripherals::{ADC1, RADIO_CLK, RNG, TIMG0, WIFI};
 use esp_hal::rmt::Rmt;
 use esp_hal::rng::Rng;
-use esp_hal::timer::{ErasedTimer, OneShotTimer, PeriodicTimer};
+use esp_hal::timer::timg::TimerGroup;
 use esp_hal::uart::Uart;
 use esp_hal::Blocking;
 use esp_hal::{clock::ClockControl, peripherals::Peripherals, prelude::*, system::SystemControl};
@@ -101,7 +101,7 @@ async fn main(spawner: Spawner) {
         adc_readings.replace(AdcReadings::default());
     }
     {
-        let rmt = Rmt::new(peripherals.RMT, 80.MHz(), &clocks, None).unwrap();
+        let rmt = Rmt::new(peripherals.RMT, 80.MHz(), &clocks).unwrap();
         let rmt_buffer = smartLedBuffer!(1);
         let led_adapter = SmartLedsAdapter::new(rmt.channel0, io.pins.gpio8, rmt_buffer, &clocks);
         let mut led = LED.lock().await;
@@ -121,10 +121,11 @@ async fn main(spawner: Spawner) {
         }
     }
 
-    let systimer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER);
-    let timers = [OneShotTimer::new(systimer.alarm0.into())];
-    let timers = mk_static!([OneShotTimer<ErasedTimer>; 1], timers);
-    esp_hal_embassy::init(&clocks, timers);
+    // let systimer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER);
+    // let timers = [OneShotTimer::new(systimer.unit0.into())];
+    // let timers = mk_static!([OneShotTimer<ErasedTimer>; 1], timers);
+    let timg0 = TimerGroup::new(peripherals.TIMG1, &clocks);
+    esp_hal_embassy::init(&clocks, timg0.timer0);
     if let Err(err) = spawner.spawn(aquire_adc_readings_task(adc1, adc_pin0, adc_pin1, adc_pin2)) {
         log::error!("could not spawn adc task");
         log::error!("{err:?}");
@@ -232,15 +233,9 @@ async fn init_wifi(
     clocks: &Clocks<'_>,
     spawner: &Spawner,
 ) -> &'static Stack<WifiDevice<'static, WifiStaDevice>> {
-    let timer = PeriodicTimer::new(
-        esp_hal::timer::timg::TimerGroup::new(timg0, clocks, None)
-            .timer0
-            .into(),
-    );
-
     let init = esp_wifi::initialize(
         EspWifiInitFor::Wifi,
-        timer,
+        TimerGroup::new(timg0, clocks).timer0,
         Rng::new(rng),
         radio_clk,
         clocks,
