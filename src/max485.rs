@@ -178,7 +178,6 @@ impl Write for Max485Modbus {
         embassy_time::block_for(Duration::from_micros(3));
         let bytes_written = self.uart.write(buf).await?;
         self.flush().await?;
-        self.rw_pin.set_low();
         Ok(bytes_written)
     }
 
@@ -191,7 +190,6 @@ impl Write for Max485Modbus {
         embassy_time::block_for(Duration::from_micros(3));
         self.uart.write_all(buf).await?;
         self.flush().await?;
-        self.rw_pin.set_low();
         Ok(())
     }
 }
