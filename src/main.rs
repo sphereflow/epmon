@@ -110,9 +110,17 @@ async fn main(spawner: Spawner) {
             .map(|l| l.write(Some(RGB8::new(130, 0, 0))).ok());
     }
     {
-        if let Ok(uart_peripheral) =
-            Uart::new_async(peripherals.UART1, &clocks, io.pins.gpio18, io.pins.gpio10)
-        {
+        let uart_config = esp_hal::uart::config::Config {
+            rx_timeout: None,
+            ..Default::default()
+        };
+        if let Ok(uart_peripheral) = Uart::new_async_with_config(
+            peripherals.UART1,
+            uart_config,
+            &clocks,
+            io.pins.gpio18,
+            io.pins.gpio10,
+        ) {
             let mut modbus = MAX485_MODBUS.lock().await;
             modbus.replace(Max485Modbus::new(
                 Output::new(io.pins.gpio2, Level::Low),
