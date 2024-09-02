@@ -111,7 +111,7 @@ async fn main(spawner: Spawner) {
     }
     {
         let uart_config = esp_hal::uart::config::Config {
-            rx_timeout: None,
+            rx_timeout: Some(100),
             ..Default::default()
         };
         if let Ok(uart_peripheral) = Uart::new_async_with_config(
@@ -169,7 +169,7 @@ async fn main(spawner: Spawner) {
             }
         }
 
-        Timer::after_secs(1).await;
+        Timer::after_secs(10).await;
     }
 }
 
