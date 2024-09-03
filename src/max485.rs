@@ -1,7 +1,7 @@
 use embassy_time::Duration;
-use embedded_io::Read;
 use embedded_io::ReadExactError;
-use embedded_svc::io::asynch::Write;
+use embedded_io_async::Read;
+use embedded_io_async::Write;
 use esp_hal::{
     gpio::{GpioPin, Output},
     peripherals::UART1,
@@ -48,14 +48,14 @@ impl Max485Modbus {
         // get a response if the value was successfully set
         let mut response_buffer = request_buffer;
         let _ = response_buffer.resize(3, 0);
-        self.read_exact(&mut response_buffer)?;
+        self.read_exact(&mut response_buffer).await?;
         let response_frame_len =
             guess_response_frame_len(&response_buffer, rmodbus::ModbusProto::Rtu)
                 .map_err(|_error| Max485ModbusError {})?;
         let _ = response_buffer
             .resize(response_frame_len as usize, 0)
             .map_err(|_error| Max485ModbusError {});
-        self.read_exact(&mut response_buffer[3..])?;
+        self.read_exact(&mut response_buffer[3..]).await?;
         modbus_request
             .parse_ok(&response_buffer)
             .map_err(|_error| Max485ModbusError {})?;
@@ -82,7 +82,7 @@ impl Max485Modbus {
         response_buffer
             .resize(3, 0)
             .map_err(|_error| Max485ModbusError {})?;
-        self.read_exact(&mut response_buffer)?;
+        self.read_exact(&mut response_buffer).await?;
         log::info!("got response frame: {:?}", response_buffer);
         let response_frame_len =
             guess_response_frame_len(&response_buffer, rmodbus::ModbusProto::Rtu)
@@ -91,7 +91,7 @@ impl Max485Modbus {
         response_buffer
             .resize(response_frame_len as usize, 0)
             .map_err(|_error| Max485ModbusError {})?;
-        self.read_exact(&mut response_buffer[3..])?;
+        self.read_exact(&mut response_buffer[3..]).await?;
         log::info!("got response frame: {:?}", response_buffer);
         let mut val_array: Vec<u16, 128> = Vec::new();
         modbus_request
@@ -120,14 +120,14 @@ impl Max485Modbus {
         response_buffer
             .resize(3, 0)
             .map_err(|_error| Max485ModbusError {})?;
-        self.read_exact(&mut response_buffer)?;
+        self.read_exact(&mut response_buffer).await?;
         let response_frame_len =
             guess_response_frame_len(&response_buffer, rmodbus::ModbusProto::Rtu)
                 .map_err(|_error| Max485ModbusError {})?;
         response_buffer
             .resize(response_frame_len as usize, 0)
             .map_err(|_error| Max485ModbusError {})?;
-        self.read_exact(&mut response_buffer[3..])?;
+        self.read_exact(&mut response_buffer[3..]).await?;
         let mut val_array: Vec<u16, 128> = Vec::new();
         modbus_request
             .parse_u16(&response_buffer, &mut val_array)
@@ -156,14 +156,14 @@ impl Max485Modbus {
         response_buffer
             .resize(3, 0)
             .map_err(|_error| Max485ModbusError {})?;
-        self.read_exact(&mut response_buffer)?;
+        self.read_exact(&mut response_buffer).await?;
         let response_frame_len =
             guess_response_frame_len(&response_buffer, rmodbus::ModbusProto::Rtu)
                 .map_err(|_error| Max485ModbusError {})?;
         response_buffer
             .resize(response_frame_len as usize, 0)
             .map_err(|_error| Max485ModbusError {})?;
-        self.read_exact(&mut response_buffer[3..])?;
+        self.read_exact(&mut response_buffer[3..]).await?;
         modbus_request
             .parse_ok(&response_buffer)
             .map_err(|_error| Max485ModbusError {})?;
@@ -198,10 +198,10 @@ impl Write for Max485Modbus {
     }
 }
 
-impl Read for Max485Modbus {
+impl embedded_io::Read for Max485Modbus {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         self.rw_pin.set_low();
-        self.uart.read(buf).map_err(|e| e.into())
+        embedded_io::Read::read(&mut self.uart, buf).map_err(|e| e.into())
     }
 
     fn read_exact(
@@ -209,8 +209,26 @@ impl Read for Max485Modbus {
         buf: &mut [u8],
     ) -> Result<(), embedded_io::ReadExactError<Self::Error>> {
         self.rw_pin.set_low();
-        self.uart
-            .read_exact(buf)
+        embedded_io::Read::read_exact(&mut self.uart, buf)
+            .map_err(|_e| ReadExactError::Other(Max485ModbusError {}))
+    }
+}
+
+impl embedded_io_async::Read for Max485Modbus {
+    async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
+        self.rw_pin.set_low();
+        embedded_io_async::Read::read(&mut self.uart, buf)
+            .await
+            .map_err(|e| e.into())
+    }
+
+    async fn read_exact(
+        &mut self,
+        buf: &mut [u8],
+    ) -> Result<(), embedded_io::ReadExactError<Self::Error>> {
+        self.rw_pin.set_low();
+        embedded_io_async::Read::read_exact(&mut self.uart, buf)
+            .await
             .map_err(|_e| ReadExactError::Other(Max485ModbusError {}))
     }
 }
