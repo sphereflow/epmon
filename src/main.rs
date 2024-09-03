@@ -498,7 +498,7 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
                             {
                                 let bytes: Vec<u8, 256> =
                                     values.iter().flat_map(|val| val.to_be_bytes()).collect();
-                                log::info!("holding values: {:?}", bytes);
+                                log::info!("register values: {:?}", bytes);
                                 if socket.write_all(bytes.as_slice()).await.is_err() {
                                     break;
                                 }
@@ -516,9 +516,9 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
                     }
                 }
             } else {
-                log::info!("could not recognize command");
+                log::error!("could not recognize command");
             }
         }
-        log::info!("tcp socket error => reconnecting with new tcp socket");
+        log::error!("tcp socket error => reconnecting with new tcp socket");
     }
 }
