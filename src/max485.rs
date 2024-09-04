@@ -1,4 +1,5 @@
 use embassy_time::Duration;
+use embassy_time::Timer;
 use embedded_io::ReadExactError;
 use embedded_io_async::Read;
 use embedded_io_async::Write;
@@ -174,6 +175,16 @@ impl Max485Modbus {
         }
         Ok(val)
     }
+
+    pub async fn test_loopback(&mut self) -> Result<bool, Max485ModbusError> {
+        let tx_buf = [1, 2, 3, 4, 5, 6, 7];
+        self.uart.write_all(&tx_buf).await?;
+        let mut rx_buf: [u8; 7] = [0; 7];
+        Timer::after_millis(50).await;
+        embedded_io_async::Read::read_exact(&mut self.uart, &mut rx_buf).await?;
+        let equals = rx_buf == tx_buf;
+        Ok(equals)
+    }
 }
 
 impl Write for Max485Modbus {
@@ -209,8 +220,10 @@ impl embedded_io::Read for Max485Modbus {
         buf: &mut [u8],
     ) -> Result<(), embedded_io::ReadExactError<Self::Error>> {
         self.rw_pin.set_low();
-        embedded_io::Read::read_exact(&mut self.uart, buf)
-            .map_err(|_e| ReadExactError::Other(Max485ModbusError {}))
+        embedded_io::Read::read_exact(&mut self.uart, buf).map_err(|e| match e {
+            ReadExactError::UnexpectedEof => ReadExactError::UnexpectedEof,
+            ReadExactError::Other(e) => ReadExactError::Other(e.into()),
+        })
     }
 }
 
@@ -222,14 +235,14 @@ impl embedded_io_async::Read for Max485Modbus {
             .map_err(|e| e.into())
     }
 
-    async fn read_exact(
-        &mut self,
-        buf: &mut [u8],
-    ) -> Result<(), embedded_io::ReadExactError<Self::Error>> {
+    async fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), ReadExactError<Self::Error>> {
         self.rw_pin.set_low();
         embedded_io_async::Read::read_exact(&mut self.uart, buf)
             .await
-            .map_err(|_e| ReadExactError::Other(Max485ModbusError {}))
+            .map_err(|e| match e {
+                ReadExactError::UnexpectedEof => ReadExactError::UnexpectedEof,
+                ReadExactError::Other(e) => ReadExactError::Other(e.into()),
+            })
     }
 }
 

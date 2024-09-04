@@ -151,6 +151,17 @@ async fn main(spawner: Spawner) {
                     .get_range(RING_BUFFER_SIZE - 20..RING_BUFFER_SIZE, &mut print_buffer);
                 log::info!("{:?}", print_buffer);
             }
+
+            {
+                // let mut modbus_guard = MAX485_MODBUS.lock().await;
+                // if let Some(modbus) = modbus_guard.as_mut() {
+                //     match modbus.test_loopback().await {
+                //         Ok(true) => log::info!("test loopback => success"),
+                //         Ok(false) => log::error!("test loopback => buffers are not equal"),
+                //         Err(_) => log::error!("test loopback => sth went wrong"),
+                //     }
+                // }
+            }
         }
 
         Timer::after_secs(10).await;
