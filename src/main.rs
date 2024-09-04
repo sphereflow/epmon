@@ -5,7 +5,6 @@
 
 use crate::ringbuffer::RingBuffer;
 use command::Command;
-use core::mem::MaybeUninit;
 use embassy_executor::Spawner;
 use embassy_net::tcp::TcpSocket;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
@@ -33,14 +32,9 @@ use heapless::Vec;
 use max485::Max485Modbus;
 use smart_leds::{SmartLedsWrite, RGB8};
 
-extern crate alloc;
-
 pub mod command;
 pub mod max485;
 pub mod ringbuffer;
-
-#[global_allocator]
-static ALLOCATOR: esp_alloc::EspHeap = esp_alloc::EspHeap::empty();
 
 static ADC_READINGS: Mutex<CriticalSectionRawMutex, Option<AdcReadings>> = Mutex::new(None);
 
@@ -59,15 +53,6 @@ type LedT = SmartLedsAdapter<esp_hal::rmt::Channel<Blocking, 0>, 25>;
 static LED: Mutex<CriticalSectionRawMutex, Option<LedT>> = Mutex::new(None);
 static MAX485_MODBUS: Mutex<CriticalSectionRawMutex, Option<Max485Modbus>> = Mutex::new(None);
 
-fn init_heap() {
-    const HEAP_SIZE: usize = 32 * 1024;
-    static mut HEAP: MaybeUninit<[u8; HEAP_SIZE]> = MaybeUninit::uninit();
-
-    unsafe {
-        ALLOCATOR.init(HEAP.as_mut_ptr() as *mut u8, HEAP_SIZE);
-    }
-}
-
 macro_rules! mk_static {
     ($t:ty,$val:expr) => {{
         static STATIC_CELL: static_cell::StaticCell<$t> = static_cell::StaticCell::new();
@@ -83,7 +68,6 @@ async fn main(spawner: Spawner) {
     let peripherals = Peripherals::take();
     let system = SystemControl::new(peripherals.SYSTEM);
     let clocks = ClockControl::max(system.clock_control).freeze();
-    init_heap();
 
     let io = Io::new(peripherals.GPIO, peripherals.IO_MUX);
     // set up smart_led

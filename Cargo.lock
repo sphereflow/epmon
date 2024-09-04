@@ -560,7 +560,6 @@ dependencies = [
  "embedded-io",
  "embedded-io-async",
  "embedded-svc",
- "esp-alloc",
  "esp-backtrace",
  "esp-hal",
  "esp-hal-embassy",
@@ -579,16 +578,6 @@ name = "equivalent"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
-
-[[package]]
-name = "esp-alloc"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e44c0b0c0416865313f3fcb6c00f7bc8ecebef30459bec74dc272eb12e465e3f"
-dependencies = [
- "critical-section",
- "linked_list_allocator",
-]
 
 [[package]]
 name = "esp-backtrace"
@@ -1626,9 +1615,9 @@ dependencies = [
 
 [[package]]
 name = "xtensa-lx-rt"
-version = "0.17.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b657da7a82a76b695b12d9188be2d8437854157b20d543e2dcac5589bbc85f1c"
+checksum = "2ceb69c1487b78d83531c5d94fb81d0dceef1ccb0affba29f29420b1f72d3ddb"
 dependencies = [
  "anyhow",
  "bare-metal",
