@@ -15,7 +15,11 @@ impl Command {
     pub fn to_bytes(&self) -> [u8; 4] {
         let b0 = self.discriminant();
         let [b1, b2, b3] = match self {
-            Command::ModbusGetHoldings {
+            Command::ModbusGetInputRegisters {
+                register_address,
+                size,
+            }
+            | Command::ModbusGetHoldings {
                 register_address,
                 size,
             } => {
