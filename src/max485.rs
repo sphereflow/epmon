@@ -53,9 +53,7 @@ impl Max485Modbus {
         let response_frame_len =
             guess_response_frame_len(&response_buffer, rmodbus::ModbusProto::Rtu)
                 .map_err(|_error| Max485ModbusError::ModbusError)?;
-        let _ = response_buffer
-            .resize(response_frame_len as usize, 0)
-            .map_err(|_error| Max485ModbusError::BufferResizeError);
+        response_buffer.resize(response_frame_len as usize, 0)?;
         self.read_exact(&mut response_buffer[3..]).await?;
         modbus_request
             .parse_ok(&response_buffer)
@@ -80,18 +78,14 @@ impl Max485Modbus {
 
         // get a response if the value was successfully set
         let mut response_buffer = request_buffer;
-        response_buffer
-            .resize(3, 0)
-            .map_err(|_error| Max485ModbusError::BufferResizeError)?;
+        response_buffer.resize(3, 0)?;
         self.read_exact(&mut response_buffer).await?;
         log::info!("got response frame: {:?}", response_buffer);
         let response_frame_len =
             guess_response_frame_len(&response_buffer, rmodbus::ModbusProto::Rtu)
                 .map_err(|_error| Max485ModbusError::ModbusError)?;
         log::info!("calculated response frame len: {}", response_frame_len);
-        response_buffer
-            .resize(response_frame_len as usize, 0)
-            .map_err(|_error| Max485ModbusError::BufferResizeError)?;
+        response_buffer.resize(response_frame_len as usize, 0)?;
         self.read_exact(&mut response_buffer[3..]).await?;
         log::info!("got response frame: {:?}", response_buffer);
         let mut val_array: Vec<u16, 128> = Vec::new();
@@ -118,16 +112,12 @@ impl Max485Modbus {
 
         // get a response if the value was successfully set
         let mut response_buffer = request_buffer;
-        response_buffer
-            .resize(3, 0)
-            .map_err(|_error| Max485ModbusError::BufferResizeError)?;
+        response_buffer.resize(3, 0)?;
         self.read_exact(&mut response_buffer).await?;
         let response_frame_len =
             guess_response_frame_len(&response_buffer, rmodbus::ModbusProto::Rtu)
                 .map_err(|_error| Max485ModbusError::ModbusError)?;
-        response_buffer
-            .resize(response_frame_len as usize, 0)
-            .map_err(|_error| Max485ModbusError::BufferResizeError)?;
+        response_buffer.resize(response_frame_len as usize, 0)?;
         self.read_exact(&mut response_buffer[3..]).await?;
         let mut val_array: Vec<u16, 128> = Vec::new();
         modbus_request
@@ -154,16 +144,12 @@ impl Max485Modbus {
 
         // get a response if the value was successfully set
         let mut response_buffer = request_buffer;
-        response_buffer
-            .resize(3, 0)
-            .map_err(|_error| Max485ModbusError::BufferResizeError)?;
+        response_buffer.resize(3, 0)?;
         self.read_exact(&mut response_buffer).await?;
         let response_frame_len =
             guess_response_frame_len(&response_buffer, rmodbus::ModbusProto::Rtu)
                 .map_err(|_error| Max485ModbusError::ModbusError)?;
-        response_buffer
-            .resize(response_frame_len as usize, 0)
-            .map_err(|_error| Max485ModbusError::BufferResizeError)?;
+        response_buffer.resize(response_frame_len as usize, 0)?;
         self.read_exact(&mut response_buffer[3..]).await?;
         modbus_request
             .parse_ok(&response_buffer)
@@ -290,5 +276,11 @@ impl From<esp_hal::uart::Error> for Max485ModbusError {
 impl<E> From<embedded_io::ReadExactError<E>> for Max485ModbusError {
     fn from(_value: embedded_io::ReadExactError<E>) -> Self {
         Max485ModbusError::ReadExactError
+    }
+}
+
+impl From<()> for Max485ModbusError {
+    fn from(_value: ()) -> Self {
+        Max485ModbusError::BufferResizeError
     }
 }
