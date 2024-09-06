@@ -138,34 +138,8 @@ async fn main(spawner: Spawner) {
         .expect("could not spawn network_handler");
 
     loop {
-        let mut print_buffer: [u16; 20] = [0; 20];
-        {
-            let mut adc_readings_guard = ADC_READINGS.lock().await;
-            if let Some(adc_readings) = adc_readings_guard.as_mut() {
-                adc_readings.ring_buffers[0]
-                    .get_range(RING_BUFFER_SIZE - 20..RING_BUFFER_SIZE, &mut print_buffer);
-                log::info!("{:?}", print_buffer);
-                adc_readings.ring_buffers[1]
-                    .get_range(RING_BUFFER_SIZE - 20..RING_BUFFER_SIZE, &mut print_buffer);
-                log::info!("{:?}", print_buffer);
-                adc_readings.ring_buffers[2]
-                    .get_range(RING_BUFFER_SIZE - 20..RING_BUFFER_SIZE, &mut print_buffer);
-                log::info!("{:?}", print_buffer);
-            }
-
-            {
-                // let mut modbus_guard = MAX485_MODBUS.lock().await;
-                // if let Some(modbus) = modbus_guard.as_mut() {
-                //     match modbus.test_loopback().await {
-                //         Ok(true) => log::info!("test loopback => success"),
-                //         Ok(false) => log::error!("test loopback => buffers are not equal"),
-                //         Err(_) => log::error!("test loopback => sth went wrong"),
-                //     }
-                // }
-            }
-        }
-
-        Timer::after_secs(10).await;
+        // run_tests().await;
+        Timer::after_secs(1).await;
     }
 }
 
@@ -516,4 +490,49 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
 pub async fn change_led_color(color: RGB8) {
     let mut led = LED.lock().await;
     led.as_mut().map(|l| l.write(Some(color)));
+}
+
+async fn run_tests() {
+    run_modbus_test().await;
+    // run_uart_loopback_test().await;
+    // run_adc_test().await;
+}
+
+async fn run_modbus_test() {
+    let mut modbus_guard = MAX485_MODBUS.lock().await;
+    if let Some(modbus) = modbus_guard.as_mut() {
+        match with_timeout(Duration::from_millis(100), modbus.test_holding()).await {
+            Ok(Ok(true)) => log::info!("test modbus => success"),
+            Ok(Ok(false)) => log::error!("test modbus => buffers are not equal"),
+            Ok(Err(e)) => log::error!("test modbus => modbus error: {:?}", e),
+            Err(_) => log::error!("test modbus => timeout"),
+        }
+    }
+}
+
+async fn run_uart_loopback_test() {
+    let mut modbus_guard = MAX485_MODBUS.lock().await;
+    if let Some(modbus) = modbus_guard.as_mut() {
+        match with_timeout(Duration::from_millis(100), modbus.test_loopback()).await {
+            Ok(Ok(true)) => log::info!("test loopback => success"),
+            Ok(Ok(false)) => log::error!("test loopback => buffers are not equal"),
+            _ => log::error!("test loopback => sth went wrong"),
+        }
+    }
+}
+
+async fn run_adc_test() {
+    let mut print_buffer: [u16; 20] = [0; 20];
+    let mut adc_readings_guard = ADC_READINGS.lock().await;
+    if let Some(adc_readings) = adc_readings_guard.as_mut() {
+        adc_readings.ring_buffers[0]
+            .get_range(RING_BUFFER_SIZE - 20..RING_BUFFER_SIZE, &mut print_buffer);
+        log::info!("{:?}", print_buffer);
+        adc_readings.ring_buffers[1]
+            .get_range(RING_BUFFER_SIZE - 20..RING_BUFFER_SIZE, &mut print_buffer);
+        log::info!("{:?}", print_buffer);
+        adc_readings.ring_buffers[2]
+            .get_range(RING_BUFFER_SIZE - 20..RING_BUFFER_SIZE, &mut print_buffer);
+        log::info!("{:?}", print_buffer);
+    }
 }

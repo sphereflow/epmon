@@ -40,7 +40,7 @@ impl Max485Modbus {
         let mut request_buffer: heapless::Vec<u8, 256> = heapless::Vec::new();
         modbus_request
             .generate_set_holdings_bulk(reg_address, register_values, &mut request_buffer)
-            .map_err(|_e| Max485ModbusError {})?;
+            .map_err(|_e| Max485ModbusError::ModbusError)?;
         self.write_all(&request_buffer).await?;
 
         // reuse the request_buffer for the response buffer
@@ -52,14 +52,14 @@ impl Max485Modbus {
         self.read_exact(&mut response_buffer).await?;
         let response_frame_len =
             guess_response_frame_len(&response_buffer, rmodbus::ModbusProto::Rtu)
-                .map_err(|_error| Max485ModbusError {})?;
+                .map_err(|_error| Max485ModbusError::ModbusError)?;
         let _ = response_buffer
             .resize(response_frame_len as usize, 0)
-            .map_err(|_error| Max485ModbusError {});
+            .map_err(|_error| Max485ModbusError::BufferResizeError);
         self.read_exact(&mut response_buffer[3..]).await?;
         modbus_request
             .parse_ok(&response_buffer)
-            .map_err(|_error| Max485ModbusError {})?;
+            .map_err(|_error| Max485ModbusError::ModbusError)?;
         Ok(())
     }
 
@@ -72,7 +72,7 @@ impl Max485Modbus {
         let mut request_buffer: Vec<u8, 256> = Vec::new();
         modbus_request
             .generate_get_holdings(reg_address, holding_count as u16, &mut request_buffer)
-            .map_err(|_error| Max485ModbusError {})?;
+            .map_err(|_error| Max485ModbusError::ModbusError)?;
         self.write_all(&request_buffer).await?;
 
         // reuse the request_buffer for the response buffer
@@ -82,22 +82,22 @@ impl Max485Modbus {
         let mut response_buffer = request_buffer;
         response_buffer
             .resize(3, 0)
-            .map_err(|_error| Max485ModbusError {})?;
+            .map_err(|_error| Max485ModbusError::BufferResizeError)?;
         self.read_exact(&mut response_buffer).await?;
         log::info!("got response frame: {:?}", response_buffer);
         let response_frame_len =
             guess_response_frame_len(&response_buffer, rmodbus::ModbusProto::Rtu)
-                .map_err(|_error| Max485ModbusError {})?;
+                .map_err(|_error| Max485ModbusError::ModbusError)?;
         log::info!("calculated response frame len: {}", response_frame_len);
         response_buffer
             .resize(response_frame_len as usize, 0)
-            .map_err(|_error| Max485ModbusError {})?;
+            .map_err(|_error| Max485ModbusError::BufferResizeError)?;
         self.read_exact(&mut response_buffer[3..]).await?;
         log::info!("got response frame: {:?}", response_buffer);
         let mut val_array: Vec<u16, 128> = Vec::new();
         modbus_request
             .parse_u16(&response_buffer, &mut val_array)
-            .map_err(|_error| Max485ModbusError {})?;
+            .map_err(|_error| Max485ModbusError::ModbusError)?;
         Ok(val_array)
     }
 
@@ -110,7 +110,7 @@ impl Max485Modbus {
         let mut request_buffer: Vec<u8, 256> = Vec::new();
         modbus_request
             .generate_get_inputs(reg_address, register_count as u16, &mut request_buffer)
-            .map_err(|_error| Max485ModbusError {})?;
+            .map_err(|_error| Max485ModbusError::ModbusError)?;
         self.write_all(&request_buffer).await?;
 
         // reuse the request_buffer for the response buffer
@@ -120,19 +120,19 @@ impl Max485Modbus {
         let mut response_buffer = request_buffer;
         response_buffer
             .resize(3, 0)
-            .map_err(|_error| Max485ModbusError {})?;
+            .map_err(|_error| Max485ModbusError::BufferResizeError)?;
         self.read_exact(&mut response_buffer).await?;
         let response_frame_len =
             guess_response_frame_len(&response_buffer, rmodbus::ModbusProto::Rtu)
-                .map_err(|_error| Max485ModbusError {})?;
+                .map_err(|_error| Max485ModbusError::ModbusError)?;
         response_buffer
             .resize(response_frame_len as usize, 0)
-            .map_err(|_error| Max485ModbusError {})?;
+            .map_err(|_error| Max485ModbusError::BufferResizeError)?;
         self.read_exact(&mut response_buffer[3..]).await?;
         let mut val_array: Vec<u16, 128> = Vec::new();
         modbus_request
             .parse_u16(&response_buffer, &mut val_array)
-            .map_err(|_error| Max485ModbusError {})?;
+            .map_err(|_error| Max485ModbusError::ModbusError)?;
         Ok(val_array)
     }
     // a coil is a single bit on the device
@@ -146,7 +146,7 @@ impl Max485Modbus {
         let mut request_buffer: heapless::Vec<u8, 256> = heapless::Vec::new();
         modbus_request
             .generate_get_coils(reg_address, count.max(8), &mut request_buffer)
-            .map_err(|_error| Max485ModbusError {})?;
+            .map_err(|_error| Max485ModbusError::ModbusError)?;
         self.write_all(&request_buffer).await?;
 
         // reuse the request_buffer for the response buffer
@@ -156,22 +156,22 @@ impl Max485Modbus {
         let mut response_buffer = request_buffer;
         response_buffer
             .resize(3, 0)
-            .map_err(|_error| Max485ModbusError {})?;
+            .map_err(|_error| Max485ModbusError::BufferResizeError)?;
         self.read_exact(&mut response_buffer).await?;
         let response_frame_len =
             guess_response_frame_len(&response_buffer, rmodbus::ModbusProto::Rtu)
-                .map_err(|_error| Max485ModbusError {})?;
+                .map_err(|_error| Max485ModbusError::ModbusError)?;
         response_buffer
             .resize(response_frame_len as usize, 0)
-            .map_err(|_error| Max485ModbusError {})?;
+            .map_err(|_error| Max485ModbusError::BufferResizeError)?;
         self.read_exact(&mut response_buffer[3..]).await?;
         modbus_request
             .parse_ok(&response_buffer)
-            .map_err(|_error| Max485ModbusError {})?;
+            .map_err(|_error| Max485ModbusError::ModbusError)?;
         let byte_count = response_buffer[2];
         let val = response_buffer[3];
         if byte_count != 1 {
-            return Err(Max485ModbusError {});
+            return Err(Max485ModbusError::ByteCountError);
         }
         Ok(val)
     }
@@ -185,6 +185,20 @@ impl Max485Modbus {
         let equals = rx_buf == tx_buf;
         Ok(equals)
     }
+
+    pub async fn test_holding(&mut self) -> Result<bool, Max485ModbusError> {
+        let tx_buf = [1, 3, 144, 3, 0, 1, 89, 10];
+        let required_response = [1, 3, 2, 11, 144, 191, 24];
+        self.rw_pin.set_high();
+        self.uart.write_all(&tx_buf).await?;
+        self.uart.flush().await?;
+        self.rw_pin.set_low();
+        let mut rx_buf: [u8; 7] = [0; 7];
+        embedded_io_async::Read::read(&mut self.uart, &mut rx_buf).await?;
+        log::info!("reading successful : {:?}", rx_buf);
+        let equals = rx_buf == required_response;
+        Ok(equals)
+    }
 }
 
 impl Write for Max485Modbus {
@@ -193,6 +207,7 @@ impl Write for Max485Modbus {
         embassy_time::block_for(Duration::from_micros(3));
         let bytes_written = self.uart.write(buf).await?;
         self.flush().await?;
+        self.rw_pin.set_low();
         Ok(bytes_written)
     }
 
@@ -205,6 +220,7 @@ impl Write for Max485Modbus {
         embassy_time::block_for(Duration::from_micros(3));
         self.uart.write_all(buf).await?;
         self.flush().await?;
+        self.rw_pin.set_low();
         Ok(())
     }
 }
@@ -251,7 +267,13 @@ impl embedded_svc::io::asynch::ErrorType for Max485Modbus {
 }
 
 #[derive(Debug)]
-pub struct Max485ModbusError {}
+pub enum Max485ModbusError {
+    UartError(esp_hal::uart::Error),
+    ModbusError,
+    BufferResizeError,
+    ByteCountError,
+    ReadExactError,
+}
 
 impl embedded_svc::io::Error for Max485ModbusError {
     fn kind(&self) -> embedded_io::ErrorKind {
@@ -260,13 +282,13 @@ impl embedded_svc::io::Error for Max485ModbusError {
 }
 
 impl From<esp_hal::uart::Error> for Max485ModbusError {
-    fn from(_value: esp_hal::uart::Error) -> Self {
-        Max485ModbusError {}
+    fn from(value: esp_hal::uart::Error) -> Self {
+        Max485ModbusError::UartError(value)
     }
 }
 
 impl<E> From<embedded_io::ReadExactError<E>> for Max485ModbusError {
     fn from(_value: embedded_io::ReadExactError<E>) -> Self {
-        Max485ModbusError {}
+        Max485ModbusError::ReadExactError
     }
 }
