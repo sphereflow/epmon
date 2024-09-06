@@ -328,10 +328,7 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
     let mut rx_meta = [PacketMetadata::EMPTY];
     // connect / reconnect loop
     loop {
-        {
-            let mut led = LED.lock().await;
-            led.as_mut().map(|l| l.write(Some(RGB8::new(0, 0, 50))));
-        }
+        change_led_color(RGB8::new(0, 0, 50)).await;
         let mut udp_socket = UdpSocket::new(stack, &mut rx_meta, &mut rx_buffer, &mut [], &mut []);
         match udp_socket.bind(IpListenEndpoint {
             addr: Some(IpAddress::v4(0, 0, 0, 0)),
@@ -367,10 +364,7 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
                 continue;
             }
         }
-        {
-            let mut led = LED.lock().await;
-            led.as_mut().map(|l| l.write(Some(RGB8::new(0, 128, 50))));
-        }
+        change_led_color(RGB8::new(0, 128, 50)).await;
 
         // send receive loop
         let mut command_buf = [0; 4];
@@ -517,4 +511,9 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
         }
         log::error!("tcp socket error => reconnecting with new tcp socket");
     }
+}
+
+pub async fn change_led_color(color: RGB8) {
+    let mut led = LED.lock().await;
+    led.as_mut().map(|l| l.write(Some(color)));
 }
