@@ -31,6 +31,7 @@ use esp_wifi::wifi::{WifiController, WifiDevice, WifiEvent, WifiStaDevice, WifiS
 use esp_wifi::EspWifiInitFor;
 use heapless::Vec;
 use max485::Max485Modbus;
+use smart_leds::colors::*;
 use smart_leds::{SmartLedsWrite, RGB8};
 
 pub mod command;
@@ -453,7 +454,7 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
                     } => {
                         let mut modbus = MAX485_MODBUS.lock().await;
                         if let Some(modbus) = modbus.as_mut() {
-                            log::info!("trying to get holding values for register_address: {:?}, and size: {}", register_address, size);
+                            log::info!("trying to get input register values for register_address: {:?}, and size: {}", register_address, size);
                             if let Ok(Ok(values)) = with_timeout(
                                 Duration::from_millis(100),
                                 modbus.get_input_registers(register_address, size),
@@ -502,10 +503,19 @@ async fn run_modbus_test() {
     let mut modbus_guard = MAX485_MODBUS.lock().await;
     if let Some(modbus) = modbus_guard.as_mut() {
         match with_timeout(Duration::from_millis(100), modbus.test_holding()).await {
-            Ok(Ok(true)) => log::info!("test modbus => success"),
+            Ok(Ok(true)) => {
+                log::info!("test modbus => success");
+                change_led_color(GREEN).await;
+            }
             Ok(Ok(false)) => log::error!("test modbus => buffers are not equal"),
-            Ok(Err(e)) => log::error!("test modbus => modbus error: {:?}", e),
-            Err(_) => log::error!("test modbus => timeout"),
+            Ok(Err(e)) => {
+                log::error!("test modbus => modbus error: {:?}", e);
+                change_led_color(ORANGE).await;
+            }
+            Err(_) => {
+                log::error!("test modbus => timeout");
+                change_led_color(PURPLE).await;
+            }
         }
     }
 }
