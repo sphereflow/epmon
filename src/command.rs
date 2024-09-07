@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u8)]
 pub enum Command {
     GetIntervalms = 0x0,
@@ -48,6 +48,14 @@ impl Command {
             _ => [0, 0, 0, 0],
         };
         [b0, b1, b2, b3, b4]
+    }
+
+    pub fn size(&self) -> u8 {
+        match self {
+            Command::ModbusGetHoldings { size, .. } => *size,
+            Command::ModbusGetInputRegisters { size, .. } => *size,
+            _ => 0,
+        }
     }
 
     fn discriminant(&self) -> u8 {
