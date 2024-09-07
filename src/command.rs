@@ -68,7 +68,6 @@ impl TryFrom<&[u8]> for Command {
     type Error = ();
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        log::info!("command: {:?}", value);
         match value {
             [0, ..] => Ok(Command::GetIntervalms),
             [1, ..] => Ok(Command::GetVoltageBufferSize),
