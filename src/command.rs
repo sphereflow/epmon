@@ -7,14 +7,24 @@ pub enum Command {
     GetBatteryPackBuffer,
     GetPVBuffer,
     RetransmitBuffers,
-    ModbusGetHoldings { register_address: u16, size: u8 },
-    ModbusGetInputRegisters { register_address: u16, size: u8 },
+    ModbusGetHoldings {
+        register_address: u16,
+        size: u8,
+    },
+    ModbusGetInputRegisters {
+        register_address: u16,
+        size: u8,
+    },
+    ModbusSetHolding {
+        register_address: u16,
+        new_holding_value: u16,
+    },
 }
 
 impl Command {
-    pub fn to_bytes(&self) -> [u8; 4] {
+    pub fn to_bytes(&self) -> [u8; 5] {
         let b0 = self.discriminant();
-        let [b1, b2, b3] = match self {
+        let [b1, b2, b3, b4] = match self {
             Command::ModbusGetInputRegisters {
                 register_address,
                 size,
@@ -25,11 +35,19 @@ impl Command {
             } => {
                 let [b1, b2] = register_address.to_be_bytes();
                 let b3 = *size;
-                [b1, b2, b3]
+                [b1, b2, b3, 0]
             }
-            _ => [0, 0, 0],
+            Command::ModbusSetHolding {
+                register_address,
+                new_holding_value,
+            } => {
+                let [b1, b2] = register_address.to_be_bytes();
+                let [b3, b4] = new_holding_value.to_be_bytes();
+                [b1, b2, b3, b4]
+            }
+            _ => [0, 0, 0, 0],
         };
-        [b0, b1, b2, b3]
+        [b0, b1, b2, b3, b4]
     }
 
     fn discriminant(&self) -> u8 {
@@ -56,6 +74,10 @@ impl TryFrom<&[u8]> for Command {
             [7, h1, h2, h3] => Ok(Command::ModbusGetInputRegisters {
                 register_address: u16::from_be_bytes([*h1, *h2]),
                 size: *h3,
+            }),
+            [8, h1, h2, h3, h4] => Ok(Command::ModbusSetHolding {
+                register_address: u16::from_be_bytes([*h1, *h2]),
+                new_holding_value: u16::from_be_bytes([*h3, *h4]),
             }),
             _ => Err(()),
         }

@@ -342,7 +342,7 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
         change_led_color(RGB8::new(0, 128, 50)).await;
 
         // send receive loop
-        let mut command_buf = [0; 4];
+        let mut command_buf = [0; 5];
         let mut send_buf: [u8; 1024] = [0; 1024];
         loop {
             if socket.read(&mut command_buf).await.is_err() {
@@ -479,6 +479,26 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
                             log::error!("no modbus device");
                         }
                     }
+                    Command::ModbusSetHolding {
+                        register_address,
+                        new_holding_value,
+                    } => {
+                        let mut modbus = MAX485_MODBUS.lock().await;
+                        if let Some(modbus) = modbus.as_mut() {
+                            if modbus
+                                .set_holdings(register_address, &[new_holding_value])
+                                .await
+                                .is_err()
+                            {
+                                log::error!("failed to set holding value");
+                            }
+                            log::info!(
+                                "Would set holding : {:#06x} with new holding value : {}",
+                                register_address,
+                                new_holding_value
+                            );
+                        }
+                    }
                 }
             } else {
                 log::error!("could not recognize command");
@@ -493,12 +513,14 @@ pub async fn change_led_color(color: RGB8) {
     led.as_mut().map(|l| l.write(Some(color)));
 }
 
+#[allow(dead_code)]
 async fn run_tests() {
     run_modbus_test().await;
     // run_uart_loopback_test().await;
     // run_adc_test().await;
 }
 
+#[allow(dead_code)]
 async fn run_modbus_test() {
     let mut modbus_guard = MAX485_MODBUS.lock().await;
     if let Some(modbus) = modbus_guard.as_mut() {
@@ -520,6 +542,7 @@ async fn run_modbus_test() {
     }
 }
 
+#[allow(dead_code)]
 async fn run_uart_loopback_test() {
     let mut modbus_guard = MAX485_MODBUS.lock().await;
     if let Some(modbus) = modbus_guard.as_mut() {
@@ -531,6 +554,7 @@ async fn run_uart_loopback_test() {
     }
 }
 
+#[allow(dead_code)]
 async fn run_adc_test() {
     let mut print_buffer: [u16; 20] = [0; 20];
     let mut adc_readings_guard = ADC_READINGS.lock().await;
