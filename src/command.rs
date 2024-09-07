@@ -68,6 +68,7 @@ impl TryFrom<&[u8]> for Command {
     type Error = ();
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        log::info!("command: {:?}", value);
         match value {
             [0, ..] => Ok(Command::GetIntervalms),
             [1, ..] => Ok(Command::GetVoltageBufferSize),
@@ -75,11 +76,11 @@ impl TryFrom<&[u8]> for Command {
             [3, ..] => Ok(Command::GetBatteryPackBuffer),
             [4, ..] => Ok(Command::GetPVBuffer),
             [5, ..] => Ok(Command::RetransmitBuffers),
-            [6, h1, h2, h3] => Ok(Command::ModbusGetHoldings {
+            [6, h1, h2, h3, _h4] => Ok(Command::ModbusGetHoldings {
                 register_address: u16::from_be_bytes([*h1, *h2]),
                 size: *h3,
             }),
-            [7, h1, h2, h3] => Ok(Command::ModbusGetInputRegisters {
+            [7, h1, h2, h3, _h4] => Ok(Command::ModbusGetInputRegisters {
                 register_address: u16::from_be_bytes([*h1, *h2]),
                 size: *h3,
             }),
