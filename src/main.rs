@@ -479,24 +479,19 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
                             log::error!("no modbus device");
                         }
                     }
-                    Command::ModbusSetHolding {
+                    Command::ModbusSetHoldings {
                         register_address,
-                        new_holding_value,
+                        new_holding_values,
                     } => {
                         let mut modbus = MAX485_MODBUS.lock().await;
                         if let Some(modbus) = modbus.as_mut() {
                             if modbus
-                                .set_holdings(register_address, &[new_holding_value])
+                                .set_holdings(register_address, &new_holding_values)
                                 .await
                                 .is_err()
                             {
-                                log::error!("failed to set holding value");
+                                log::error!("failed to set holding values");
                             }
-                            log::info!(
-                                "Would set holding : {:#06x} with new holding value : {}",
-                                register_address,
-                                new_holding_value
-                            );
                         }
                     }
                 }

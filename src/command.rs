@@ -15,16 +15,18 @@ pub enum Command {
         register_address: u16,
         size: u8,
     },
-    ModbusSetHolding {
+    /// sets all the holding values at once
+    ModbusSetHoldings {
         register_address: u16,
-        new_holding_value: u16,
+        new_holding_values: [u16; 15],
     },
 }
 
 impl Command {
-    pub fn to_bytes(&self) -> [u8; 5] {
-        let b0 = self.discriminant();
-        let [b1, b2, b3, b4] = match self {
+    pub fn to_bytes(&self) -> [u8; 33] {
+        let mut res = [0; 33];
+        res[0] = self.discriminant();
+        match self {
             Command::ModbusGetInputRegisters {
                 register_address,
                 size,
@@ -35,19 +37,22 @@ impl Command {
             } => {
                 let [b1, b2] = register_address.to_be_bytes();
                 let b3 = *size;
-                [b1, b2, b3, 0]
+                res[1] = b1;
+                res[2] = b2;
+                res[3] = b3;
             }
-            Command::ModbusSetHolding {
+            Command::ModbusSetHoldings {
                 register_address,
-                new_holding_value,
+                new_holding_values,
             } => {
                 let [b1, b2] = register_address.to_be_bytes();
-                let [b3, b4] = new_holding_value.to_be_bytes();
-                [b1, b2, b3, b4]
+                res[1] = b1;
+                res[2] = b2;
+                res[3..].clone_from_slice(bytemuck::cast_slice(new_holding_values));
             }
-            _ => [0, 0, 0, 0],
-        };
-        [b0, b1, b2, b3, b4]
+            _ => {}
+        }
+        res
     }
 
     pub fn size(&self) -> u8 {
@@ -75,17 +80,19 @@ impl TryFrom<&[u8]> for Command {
             [3, ..] => Ok(Command::GetBatteryPackBuffer),
             [4, ..] => Ok(Command::GetPVBuffer),
             [5, ..] => Ok(Command::RetransmitBuffers),
-            [6, h1, h2, h3, _h4] => Ok(Command::ModbusGetHoldings {
+            [6, h1, h2, h3, ..] => Ok(Command::ModbusGetHoldings {
                 register_address: u16::from_be_bytes([*h1, *h2]),
                 size: *h3,
             }),
-            [7, h1, h2, h3, _h4] => Ok(Command::ModbusGetInputRegisters {
+            [7, h1, h2, h3, ..] => Ok(Command::ModbusGetInputRegisters {
                 register_address: u16::from_be_bytes([*h1, *h2]),
                 size: *h3,
             }),
-            [8, h1, h2, h3, h4] => Ok(Command::ModbusSetHolding {
+            [8, h1, h2, new_values @ ..] => Ok(Command::ModbusSetHoldings {
                 register_address: u16::from_be_bytes([*h1, *h2]),
-                new_holding_value: u16::from_be_bytes([*h3, *h4]),
+                new_holding_values: bytemuck::cast_slice(new_values)
+                    .try_into()
+                    .expect("Command::try_from(...) => could not cast slice into array"),
             }),
             _ => Err(()),
         }

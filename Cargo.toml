@@ -55,6 +55,7 @@ static_cell = "2.1"
 esp-hal-smartled = "0.13"
 smart-leds = "0.4"
 rmodbus = { version = "0.9", default-features = false, features = ["heapless"] }
+bytemuck = "1.18"
 
 # smoltcp = { version = "0.11.0", default-features = false, features = [
 #   "medium-ethernet",
