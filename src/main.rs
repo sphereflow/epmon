@@ -342,7 +342,7 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
         change_led_color(RGB8::new(0, 128, 50)).await;
 
         // send receive loop
-        let mut command_buf = [0; 5];
+        let mut command_buf = [0; 33];
         let mut send_buf: [u8; 1024] = [0; 1024];
         loop {
             if socket.read(&mut command_buf).await.is_err() {

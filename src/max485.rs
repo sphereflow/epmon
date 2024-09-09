@@ -41,28 +41,25 @@ impl Max485Modbus {
         modbus_request
             .generate_set_holdings_bulk(reg_address, register_values, &mut request_buffer)
             .map_err(|_e| Max485ModbusError::ModbusError)?;
-        log::info!(
-            "set_holdings would write request_buffer: {:?}",
-            &request_buffer
-        );
-        // self.write_all(&request_buffer).await?;
-        //
-        // // reuse the request_buffer for the response buffer
-        // request_buffer.clear();
-        //
-        // // get a response if the value was successfully set
-        // let mut response_buffer = request_buffer;
-        // let _ = response_buffer.resize(3, 0);
-        // self.read_exact(&mut response_buffer).await?;
-        // let response_frame_len =
-        //     guess_response_frame_len(&response_buffer, rmodbus::ModbusProto::Rtu)
-        //         .map_err(|_error| Max485ModbusError::ModbusError)?;
-        // response_buffer.resize(response_frame_len as usize, 0)?;
-        // self.read_exact(&mut response_buffer[3..]).await?;
-        // log::info!("set_holdings response_buffer: {:?}", &response_buffer);
-        // modbus_request
-        //     .parse_ok(&response_buffer)
-        //     .map_err(|_error| Max485ModbusError::ModbusError)?;
+        log::info!("set_holdings write request_buffer: {:?}", &request_buffer);
+        self.write_all(&request_buffer).await?;
+
+        // reuse the request_buffer for the response buffer
+        request_buffer.clear();
+
+        // get a response if the value was successfully set
+        let mut response_buffer = request_buffer;
+        let _ = response_buffer.resize(3, 0);
+        self.read_exact(&mut response_buffer).await?;
+        let response_frame_len =
+            guess_response_frame_len(&response_buffer, rmodbus::ModbusProto::Rtu)
+                .map_err(|_error| Max485ModbusError::ModbusError)?;
+        response_buffer.resize(response_frame_len as usize, 0)?;
+        self.read_exact(&mut response_buffer[3..]).await?;
+        log::info!("set_holdings response_buffer: {:?}", &response_buffer);
+        modbus_request
+            .parse_ok(&response_buffer)
+            .map_err(|_error| Max485ModbusError::ModbusError)?;
         Ok(())
     }
 

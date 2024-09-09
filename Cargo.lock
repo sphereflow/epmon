@@ -551,7 +551,6 @@ dependencies = [
 name = "epmon"
 version = "0.1.0"
 dependencies = [
- "bytemuck",
  "critical-section",
  "embassy-executor",
  "embassy-net",

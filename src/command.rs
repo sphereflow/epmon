@@ -48,7 +48,12 @@ impl Command {
                 let [b1, b2] = register_address.to_be_bytes();
                 res[1] = b1;
                 res[2] = b2;
-                res[3..].clone_from_slice(bytemuck::cast_slice(new_holding_values));
+                let holding_bytes = &mut res[3..];
+                for (ix, val) in new_holding_values.iter().enumerate() {
+                    let chunk = val.to_be_bytes();
+                    holding_bytes[ix * 2] = chunk[0];
+                    holding_bytes[ix * 2 + 1] = chunk[1];
+                }
             }
             _ => {}
         }
@@ -88,12 +93,17 @@ impl TryFrom<&[u8]> for Command {
                 register_address: u16::from_be_bytes([*h1, *h2]),
                 size: *h3,
             }),
-            [8, h1, h2, new_values @ ..] => Ok(Command::ModbusSetHoldings {
-                register_address: u16::from_be_bytes([*h1, *h2]),
-                new_holding_values: bytemuck::cast_slice(new_values)
-                    .try_into()
-                    .expect("Command::try_from(...) => could not cast slice into array"),
-            }),
+            [8, h1, h2, new_values @ ..] => {
+                log::info!("set holdings values: {:?}", new_values);
+                let mut new_holding_values = [0; 15];
+                for (ix, chunk) in new_values.chunks(2).enumerate() {
+                    new_holding_values[ix] = u16::from_be_bytes([chunk[0], chunk[1]]);
+                }
+                Ok(Command::ModbusSetHoldings {
+                    register_address: u16::from_be_bytes([*h1, *h2]),
+                    new_holding_values,
+                })
+            }
             _ => Err(()),
         }
     }
