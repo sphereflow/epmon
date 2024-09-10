@@ -5,7 +5,7 @@
 #![feature(generic_const_exprs)]
 
 use crate::ringbuffer::RingBuffer;
-use command::Command;
+use command::{BufferType, Command, COMMAND_SIZE};
 use embassy_executor::Spawner;
 use embassy_net::tcp::TcpSocket;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
@@ -15,7 +15,7 @@ use embassy_sync::mutex::Mutex;
 use embassy_time::{with_timeout, Duration, Timer};
 use embedded_svc::io::asynch::Write;
 use esp_backtrace as _;
-use esp_hal::analog::adc::{Adc, AdcConfig, AdcPin, Attenuation};
+use esp_hal::analog::adc::{Adc, AdcCalScheme, AdcChannel, AdcConfig, AdcPin, Attenuation};
 use esp_hal::clock::Clocks;
 use esp_hal::gpio::{GpioPin, Io, Level, Output};
 use esp_hal::peripherals::{ADC1, RADIO_CLK, RNG, TIMG0, WIFI};
@@ -39,12 +39,14 @@ pub mod max485;
 pub mod ringbuffer;
 
 static ADC_READINGS: Mutex<CriticalSectionRawMutex, Option<AdcReadings>> = Mutex::new(None);
+static POWER_READINGS: Mutex<CriticalSectionRawMutex, Option<PowerReadings>> = Mutex::new(None);
 
 const SSID: &str = env!("WIFI_SSID");
 const PASSWORD: &str = env!("WIFI_PASS");
 const PORT: u16 = 8900;
-const RING_BUFFER_SIZE: usize = 20000;
-const INTERVAL_MS: u16 = 20;
+const RING_BUFFER_SIZE: usize = 12000;
+const VOLTAGE_INTERVAL_MS: u16 = 200;
+const POWER_INTERVAL_MS: u16 = 10000;
 const RX_BUFFER_SIZE: usize = 1024;
 const TX_BUFFER_SIZE: usize = 1024;
 // static buffers to not need a huge task-arena
@@ -87,6 +89,10 @@ async fn main(spawner: Spawner) {
         adc_readings.replace(AdcReadings::default());
     }
     {
+        let mut power_readings = POWER_READINGS.lock().await;
+        power_readings.replace(PowerReadings::default());
+    }
+    {
         let rmt = Rmt::new(peripherals.RMT, 80.MHz(), &clocks).unwrap();
         let rmt_buffer = smartLedBuffer!(1);
         let led_adapter = SmartLedsAdapter::new(rmt.channel0, io.pins.gpio8, rmt_buffer, &clocks);
@@ -115,13 +121,15 @@ async fn main(spawner: Spawner) {
         }
     }
 
-    // let systimer = esp_hal::timer::systimer::SystemTimer::new(peripherals.SYSTIMER);
-    // let timers = [OneShotTimer::new(systimer.unit0.into())];
-    // let timers = mk_static!([OneShotTimer<ErasedTimer>; 1], timers);
     let timg0 = TimerGroup::new(peripherals.TIMG1, &clocks);
     esp_hal_embassy::init(&clocks, timg0.timer0);
     if let Err(err) = spawner.spawn(aquire_adc_readings_task(adc1, adc_pin0, adc_pin1, adc_pin2)) {
         log::error!("could not spawn adc task");
+        log::error!("{err:?}");
+    }
+
+    if let Err(err) = spawner.spawn(aquire_power_readings_task()) {
+        log::error!("could not spawn power task");
         log::error!("{err:?}");
     }
 
@@ -162,24 +170,9 @@ async fn aquire_adc_readings_task(
     let mut r1;
     let mut r2;
     loop {
-        let mut res = adc1.read_oneshot(&mut pin0);
-        while res.is_err() {
-            res = adc1.read_oneshot(&mut pin0);
-            Timer::after_micros(100).await;
-        }
-        r0 = res.unwrap();
-        res = adc1.read_oneshot(&mut pin1);
-        while res.is_err() {
-            res = adc1.read_oneshot(&mut pin1);
-            Timer::after_micros(100).await;
-        }
-        r1 = res.unwrap();
-        res = adc1.read_oneshot(&mut pin2);
-        while res.is_err() {
-            res = adc1.read_oneshot(&mut pin2);
-            Timer::after_micros(100).await;
-        }
-        r2 = res.unwrap();
+        r0 = adc1.read_adc(&mut pin0).await;
+        r1 = adc1.read_adc(&mut pin1).await;
+        r2 = adc1.read_adc(&mut pin2).await;
         // println!("r012: {r0:?}, {r1:?}, {r2:?}");
         {
             let mut adc_readings_guard = ADC_READINGS.lock().await;
@@ -189,7 +182,70 @@ async fn aquire_adc_readings_task(
                 adc_readings.push_value(2_usize, r2);
             }
         }
-        Timer::after_millis(INTERVAL_MS as u64).await;
+        Timer::after_millis(VOLTAGE_INTERVAL_MS as u64).await;
+    }
+}
+
+trait ReadAdc {
+    type ADC: esp_hal::analog::adc::RegisterAccess;
+    async fn read_adc<const GPIO_NUM: u8>(
+        &mut self,
+        pin: &mut AdcPin<GpioPin<GPIO_NUM>, Self::ADC, AdcCal>,
+    ) -> u16
+    where
+        GpioPin<GPIO_NUM>: AdcChannel;
+}
+
+impl<'a, ADC: esp_hal::analog::adc::RegisterAccess> ReadAdc for Adc<'a, ADC>
+where
+    AdcCal: AdcCalScheme<ADC>,
+{
+    type ADC = ADC;
+    async fn read_adc<const GPIO_NUM: u8>(
+        &mut self,
+        pin: &mut AdcPin<GpioPin<GPIO_NUM>, ADC, AdcCal>,
+    ) -> u16
+    where
+        GpioPin<GPIO_NUM>: AdcChannel,
+    {
+        loop {
+            if let Ok(val) = self.read_oneshot(pin) {
+                return val;
+            }
+            Timer::after_micros(100).await;
+        }
+    }
+}
+
+#[embassy_executor::task]
+async fn aquire_power_readings_task() {
+    loop {
+        let mut power_pv_acc = 0;
+        for _ in 0..10 {
+            let mut modbus = MAX485_MODBUS.lock().await;
+            if let Some(modbus) = modbus.as_mut() {
+                if let Ok(Ok(values)) = with_timeout(
+                    Duration::from_millis(100),
+                    modbus.get_input_registers(0x3102, 2),
+                )
+                .await
+                {
+                    let power = (values[0] as u32) + ((values[1] as u32) << 16);
+                    power_pv_acc += power;
+                } else {
+                    log::error!("aquire_power_readings_task: timeout or modbus error");
+                }
+            } else {
+                log::error!("no modbus device");
+            }
+            Timer::after_millis(POWER_INTERVAL_MS as u64 / 10).await;
+        }
+        {
+            let mut power_readings_guard = POWER_READINGS.lock().await;
+            if let Some(power_readings) = (*power_readings_guard).as_mut() {
+                power_readings.push_value(0, (power_pv_acc / 1000) as u16);
+            }
+        }
     }
 }
 
@@ -199,6 +255,17 @@ struct AdcReadings {
 }
 
 impl AdcReadings {
+    fn push_value(&mut self, ix: usize, val: u16) {
+        self.ring_buffers[ix].push(val);
+    }
+}
+
+#[derive(Default, Clone, Debug)]
+struct PowerReadings {
+    pub ring_buffers: [RingBuffer<RING_BUFFER_SIZE>; 2],
+}
+
+impl PowerReadings {
     fn push_value(&mut self, ix: usize, val: u16) {
         self.ring_buffers[ix].push(val);
     }
@@ -342,7 +409,7 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
         change_led_color(RGB8::new(0, 128, 50)).await;
 
         // send receive loop
-        let mut command_buf = [0; 33];
+        let mut command_buf = [0; COMMAND_SIZE];
         let mut send_buf: [u8; 1024] = [0; 1024];
         loop {
             if socket.read(&mut command_buf).await.is_err() {
@@ -351,8 +418,16 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
             }
             if let Ok(command) = command_buf[..].try_into() {
                 match command {
-                    Command::GetIntervalms => {
-                        send_buf[..2].clone_from_slice(&INTERVAL_MS.to_be_bytes());
+                    Command::GetVoltageIntervalms => {
+                        send_buf[..2].clone_from_slice(&VOLTAGE_INTERVAL_MS.to_be_bytes());
+                        log::info!("reply to Command::GetIntervalms => {:?}", &send_buf[..2]);
+                        if socket.write_all(&send_buf[..2]).await.is_err() {
+                            break;
+                        }
+                        log::info!("reply sent");
+                    }
+                    Command::GetPowerIntervalms => {
+                        send_buf[..2].clone_from_slice(&POWER_INTERVAL_MS.to_be_bytes());
                         log::info!("reply to Command::GetIntervalms => {:?}", &send_buf[..2]);
                         if socket.write_all(&send_buf[..2]).await.is_err() {
                             break;
@@ -372,7 +447,7 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
                         }
                         log::info!("reply sent");
                     }
-                    Command::GetBattery1Buffer => {
+                    Command::GetBuffer(BufferType::Battery1Voltage) => {
                         let mut adc_readings_guard = ADC_READINGS.lock().await;
                         if let Some(adc_readings) = adc_readings_guard.as_mut() {
                             if adc_readings.ring_buffers[0]
@@ -385,7 +460,7 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
                             }
                         }
                     }
-                    Command::GetBatteryPackBuffer => {
+                    Command::GetBuffer(BufferType::BatteryPackVoltage) => {
                         let mut adc_readings_guard = ADC_READINGS.lock().await;
                         if let Some(adc_readings) = adc_readings_guard.as_mut() {
                             if adc_readings.ring_buffers[1]
@@ -397,10 +472,34 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
                             }
                         }
                     }
-                    Command::GetPVBuffer => {
+                    Command::GetBuffer(BufferType::PVVoltage) => {
                         let mut adc_readings_guard = ADC_READINGS.lock().await;
                         if let Some(adc_readings) = adc_readings_guard.as_mut() {
                             if adc_readings.ring_buffers[2]
+                                .send_diff(&mut socket, &mut send_buf)
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                    }
+                    Command::GetBuffer(BufferType::PVPower) => {
+                        let mut power_readings_guard = POWER_READINGS.lock().await;
+                        if let Some(power_readings) = power_readings_guard.as_mut() {
+                            if power_readings.ring_buffers[0]
+                                .send_diff(&mut socket, &mut send_buf)
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                    }
+                    Command::GetBuffer(BufferType::InverterPower) => {
+                        let mut power_readings_guard = POWER_READINGS.lock().await;
+                        if let Some(power_readings) = power_readings_guard.as_mut() {
+                            if power_readings.ring_buffers[1]
                                 .send_diff(&mut socket, &mut send_buf)
                                 .await
                                 .is_err()
@@ -415,6 +514,12 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
                             adc_readings.ring_buffers[0].retransmit_whole_buffer_on_next_transmit();
                             adc_readings.ring_buffers[1].retransmit_whole_buffer_on_next_transmit();
                             adc_readings.ring_buffers[2].retransmit_whole_buffer_on_next_transmit();
+                        }
+                        if let Some(power_readings) = (*POWER_READINGS.lock().await).as_mut() {
+                            power_readings.ring_buffers[0]
+                                .retransmit_whole_buffer_on_next_transmit();
+                            power_readings.ring_buffers[1]
+                                .retransmit_whole_buffer_on_next_transmit();
                         }
                     }
                     Command::ModbusGetHoldings {

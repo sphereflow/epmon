@@ -1,11 +1,12 @@
+pub const COMMAND_SIZE: usize = 33;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[repr(u8)]
 pub enum Command {
-    GetIntervalms = 0x0,
+    GetVoltageIntervalms = 0x0,
+    GetPowerIntervalms,
     GetVoltageBufferSize,
-    GetBattery1Buffer,
-    GetBatteryPackBuffer,
-    GetPVBuffer,
+    GetBuffer(BufferType),
     RetransmitBuffers,
     ModbusGetHoldings {
         register_address: u16,
@@ -23,8 +24,8 @@ pub enum Command {
 }
 
 impl Command {
-    pub fn to_bytes(&self) -> [u8; 33] {
-        let mut res = [0; 33];
+    pub fn to_bytes(&self) -> [u8; COMMAND_SIZE] {
+        let mut res = [0; COMMAND_SIZE];
         res[0] = self.discriminant();
         match self {
             Command::ModbusGetInputRegisters {
@@ -55,6 +56,9 @@ impl Command {
                     holding_bytes[ix * 2 + 1] = chunk[1];
                 }
             }
+            Command::GetBuffer(buffer_type) => {
+                res[1] = *buffer_type as u8;
+            }
             _ => {}
         }
         res
@@ -79,22 +83,24 @@ impl TryFrom<&[u8]> for Command {
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         match value {
-            [0, ..] => Ok(Command::GetIntervalms),
-            [1, ..] => Ok(Command::GetVoltageBufferSize),
-            [2, ..] => Ok(Command::GetBattery1Buffer),
-            [3, ..] => Ok(Command::GetBatteryPackBuffer),
-            [4, ..] => Ok(Command::GetPVBuffer),
-            [5, ..] => Ok(Command::RetransmitBuffers),
-            [6, h1, h2, h3, ..] => Ok(Command::ModbusGetHoldings {
+            [0, ..] => Ok(Command::GetVoltageIntervalms),
+            [1, ..] => Ok(Command::GetPowerIntervalms),
+            [2, ..] => Ok(Command::GetVoltageBufferSize),
+            [3, 0, ..] => Ok(Command::GetBuffer(BufferType::PVVoltage)),
+            [3, 1, ..] => Ok(Command::GetBuffer(BufferType::PVPower)),
+            [3, 2, ..] => Ok(Command::GetBuffer(BufferType::Battery1Voltage)),
+            [3, 3, ..] => Ok(Command::GetBuffer(BufferType::BatteryPackVoltage)),
+            [3, 4, ..] => Ok(Command::GetBuffer(BufferType::InverterPower)),
+            [4, ..] => Ok(Command::RetransmitBuffers),
+            [5, h1, h2, h3, ..] => Ok(Command::ModbusGetHoldings {
                 register_address: u16::from_be_bytes([*h1, *h2]),
                 size: *h3,
             }),
-            [7, h1, h2, h3, ..] => Ok(Command::ModbusGetInputRegisters {
+            [6, h1, h2, h3, ..] => Ok(Command::ModbusGetInputRegisters {
                 register_address: u16::from_be_bytes([*h1, *h2]),
                 size: *h3,
             }),
-            [8, h1, h2, new_values @ ..] => {
-                log::info!("set holdings values: {:?}", new_values);
+            [7, h1, h2, new_values @ ..] => {
                 let mut new_holding_values = [0; 15];
                 for (ix, chunk) in new_values.chunks(2).enumerate() {
                     new_holding_values[ix] = u16::from_be_bytes([chunk[0], chunk[1]]);
@@ -107,4 +113,13 @@ impl TryFrom<&[u8]> for Command {
             _ => Err(()),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum BufferType {
+    PVVoltage,
+    PVPower,
+    Battery1Voltage,
+    BatteryPackVoltage,
+    InverterPower,
 }

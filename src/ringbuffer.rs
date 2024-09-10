@@ -2,7 +2,7 @@ use core::ops::Range;
 use embassy_net::tcp::TcpSocket;
 use embedded_svc::io::asynch::Write;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RingBuffer<const SIZE: usize> {
     buf: [u16; SIZE],
     current_ix: usize,
