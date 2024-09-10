@@ -175,8 +175,7 @@ async fn aquire_adc_readings_task(
         r2 = adc1.read_adc(&mut pin2).await;
         // println!("r012: {r0:?}, {r1:?}, {r2:?}");
         {
-            let mut adc_readings_guard = ADC_READINGS.lock().await;
-            if let Some(adc_readings) = (*adc_readings_guard).as_mut() {
+            if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
                 adc_readings.push_value(0_usize, r0);
                 adc_readings.push_value(1_usize, r1);
                 adc_readings.push_value(2_usize, r2);
@@ -241,8 +240,7 @@ async fn aquire_power_readings_task() {
             Timer::after_millis(POWER_INTERVAL_MS as u64 / 10).await;
         }
         {
-            let mut power_readings_guard = POWER_READINGS.lock().await;
-            if let Some(power_readings) = (*power_readings_guard).as_mut() {
+            if let Some(power_readings) = (*POWER_READINGS.lock().await).as_mut() {
                 power_readings.push_value(0, (power_pv_acc / 1000) as u16);
             }
         }
@@ -448,8 +446,7 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
                         log::info!("reply sent");
                     }
                     Command::GetBuffer(BufferType::Battery1Voltage) => {
-                        let mut adc_readings_guard = ADC_READINGS.lock().await;
-                        if let Some(adc_readings) = adc_readings_guard.as_mut() {
+                        if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
                             if adc_readings.ring_buffers[0]
                                 .send_diff(&mut socket, &mut send_buf)
                                 .await
@@ -461,8 +458,7 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
                         }
                     }
                     Command::GetBuffer(BufferType::BatteryPackVoltage) => {
-                        let mut adc_readings_guard = ADC_READINGS.lock().await;
-                        if let Some(adc_readings) = adc_readings_guard.as_mut() {
+                        if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
                             if adc_readings.ring_buffers[1]
                                 .send_diff(&mut socket, &mut send_buf)
                                 .await
@@ -473,8 +469,7 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
                         }
                     }
                     Command::GetBuffer(BufferType::PVVoltage) => {
-                        let mut adc_readings_guard = ADC_READINGS.lock().await;
-                        if let Some(adc_readings) = adc_readings_guard.as_mut() {
+                        if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
                             if adc_readings.ring_buffers[2]
                                 .send_diff(&mut socket, &mut send_buf)
                                 .await
@@ -485,8 +480,7 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
                         }
                     }
                     Command::GetBuffer(BufferType::PVPower) => {
-                        let mut power_readings_guard = POWER_READINGS.lock().await;
-                        if let Some(power_readings) = power_readings_guard.as_mut() {
+                        if let Some(power_readings) = (*POWER_READINGS.lock().await).as_mut() {
                             if power_readings.ring_buffers[0]
                                 .send_diff(&mut socket, &mut send_buf)
                                 .await
@@ -497,8 +491,7 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
                         }
                     }
                     Command::GetBuffer(BufferType::InverterPower) => {
-                        let mut power_readings_guard = POWER_READINGS.lock().await;
-                        if let Some(power_readings) = power_readings_guard.as_mut() {
+                        if let Some(power_readings) = (*POWER_READINGS.lock().await).as_mut() {
                             if power_readings.ring_buffers[1]
                                 .send_diff(&mut socket, &mut send_buf)
                                 .await
@@ -509,8 +502,7 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
                         }
                     }
                     Command::RetransmitBuffers => {
-                        let mut adc_readings_guard = ADC_READINGS.lock().await;
-                        if let Some(adc_readings) = adc_readings_guard.as_mut() {
+                        if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
                             adc_readings.ring_buffers[0].retransmit_whole_buffer_on_next_transmit();
                             adc_readings.ring_buffers[1].retransmit_whole_buffer_on_next_transmit();
                             adc_readings.ring_buffers[2].retransmit_whole_buffer_on_next_transmit();
@@ -622,8 +614,7 @@ async fn run_tests() {
 
 #[allow(dead_code)]
 async fn run_modbus_test() {
-    let mut modbus_guard = MAX485_MODBUS.lock().await;
-    if let Some(modbus) = modbus_guard.as_mut() {
+    if let Some(modbus) = (*MAX485_MODBUS.lock().await).as_mut() {
         match with_timeout(Duration::from_millis(100), modbus.test_holding()).await {
             Ok(Ok(true)) => {
                 log::info!("test modbus => success");
@@ -644,8 +635,7 @@ async fn run_modbus_test() {
 
 #[allow(dead_code)]
 async fn run_uart_loopback_test() {
-    let mut modbus_guard = MAX485_MODBUS.lock().await;
-    if let Some(modbus) = modbus_guard.as_mut() {
+    if let Some(modbus) = (*MAX485_MODBUS.lock().await).as_mut() {
         match with_timeout(Duration::from_millis(100), modbus.test_loopback()).await {
             Ok(Ok(true)) => log::info!("test loopback => success"),
             Ok(Ok(false)) => log::error!("test loopback => buffers are not equal"),
@@ -657,8 +647,7 @@ async fn run_uart_loopback_test() {
 #[allow(dead_code)]
 async fn run_adc_test() {
     let mut print_buffer: [u16; 20] = [0; 20];
-    let mut adc_readings_guard = ADC_READINGS.lock().await;
-    if let Some(adc_readings) = adc_readings_guard.as_mut() {
+    if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
         adc_readings.ring_buffers[0]
             .get_range(RING_BUFFER_SIZE - 20..RING_BUFFER_SIZE, &mut print_buffer);
         log::info!("{:?}", print_buffer);
