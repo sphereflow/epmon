@@ -170,9 +170,20 @@ async fn aquire_adc_readings_task(
     let mut r1;
     let mut r2;
     loop {
-        r0 = adc1.read_adc(&mut pin0).await;
-        r1 = adc1.read_adc(&mut pin1).await;
-        r2 = adc1.read_adc(&mut pin2).await;
+        let mut r0_acc = 0;
+        let mut r1_acc = 0;
+        let mut r2_acc = 0;
+        // accumulate values
+        for _ in 0..10 {
+            r0_acc += adc1.read_adc(&mut pin0).await;
+            r1_acc += adc1.read_adc(&mut pin1).await;
+            r2_acc += adc1.read_adc(&mut pin2).await;
+            Timer::after_millis(VOLTAGE_INTERVAL_MS as u64 / 10).await;
+        }
+        // average them out
+        r0 = r0_acc / 10;
+        r1 = r1_acc / 10;
+        r2 = r2_acc / 10;
         // println!("r012: {r0:?}, {r1:?}, {r2:?}");
         {
             if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
