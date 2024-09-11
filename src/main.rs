@@ -419,195 +419,171 @@ async fn network_handler(stack: &'static Stack<WifiDevice<'static, WifiStaDevice
         // send receive loop
         let mut command_buf = [0; COMMAND_SIZE];
         let mut send_buf: [u8; 1024] = [0; 1024];
-        loop {
-            if socket.read(&mut command_buf).await.is_err() {
-                log::error!("socket.read failed");
-                break;
-            }
-            if let Ok(command) = command_buf[..].try_into() {
-                match command {
-                    Command::GetVoltageIntervalms => {
-                        send_buf[..2].clone_from_slice(&VOLTAGE_INTERVAL_MS.to_be_bytes());
-                        log::info!("reply to Command::GetIntervalms => {:?}", &send_buf[..2]);
-                        if socket.write_all(&send_buf[..2]).await.is_err() {
-                            break;
-                        }
-                        log::info!("reply sent");
-                    }
-                    Command::GetPowerIntervalms => {
-                        send_buf[..2].clone_from_slice(&POWER_INTERVAL_MS.to_be_bytes());
-                        log::info!("reply to Command::GetIntervalms => {:?}", &send_buf[..2]);
-                        if socket.write_all(&send_buf[..2]).await.is_err() {
-                            break;
-                        }
-                        log::info!("reply sent");
-                    }
-                    Command::GetVoltageBufferSize => {
-                        let size = core::mem::size_of::<usize>();
-                        send_buf[..size].clone_from_slice(&RING_BUFFER_SIZE.to_be_bytes());
-                        log::info!("usize is {size} bytes long");
-                        log::info!(
-                            "reply to Command::GetVoltageBufferSize => {:?}",
-                            &send_buf[..size]
-                        );
-                        if socket.write_all(&send_buf[..size]).await.is_err() {
-                            break;
-                        }
-                        log::info!("reply sent");
-                    }
-                    Command::GetBuffer(BufferType::Battery1Voltage) => {
-                        if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
-                            if adc_readings.ring_buffers[0]
-                                .send_diff(&mut socket, &mut send_buf)
-                                .await
-                                .is_err()
-                            {
-                                log::info!("Error: send_diff");
-                                break;
-                            }
-                        }
-                    }
-                    Command::GetBuffer(BufferType::BatteryPackVoltage) => {
-                        if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
-                            if adc_readings.ring_buffers[1]
-                                .send_diff(&mut socket, &mut send_buf)
-                                .await
-                                .is_err()
-                            {
-                                break;
-                            }
-                        }
-                    }
-                    Command::GetBuffer(BufferType::PVVoltage) => {
-                        if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
-                            if adc_readings.ring_buffers[2]
-                                .send_diff(&mut socket, &mut send_buf)
-                                .await
-                                .is_err()
-                            {
-                                break;
-                            }
-                        }
-                    }
-                    Command::GetBuffer(BufferType::PVPower) => {
-                        if let Some(power_readings) = (*POWER_READINGS.lock().await).as_mut() {
-                            if power_readings.ring_buffers[0]
-                                .send_diff(&mut socket, &mut send_buf)
-                                .await
-                                .is_err()
-                            {
-                                break;
-                            }
-                        }
-                    }
-                    Command::GetBuffer(BufferType::InverterPower) => {
-                        if let Some(power_readings) = (*POWER_READINGS.lock().await).as_mut() {
-                            if power_readings.ring_buffers[1]
-                                .send_diff(&mut socket, &mut send_buf)
-                                .await
-                                .is_err()
-                            {
-                                break;
-                            }
-                        }
-                    }
-                    Command::RetransmitBuffers => {
-                        if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
-                            adc_readings.ring_buffers[0].retransmit_whole_buffer_on_next_transmit();
-                            adc_readings.ring_buffers[1].retransmit_whole_buffer_on_next_transmit();
-                            adc_readings.ring_buffers[2].retransmit_whole_buffer_on_next_transmit();
-                        }
-                        if let Some(power_readings) = (*POWER_READINGS.lock().await).as_mut() {
-                            power_readings.ring_buffers[0]
-                                .retransmit_whole_buffer_on_next_transmit();
-                            power_readings.ring_buffers[1]
-                                .retransmit_whole_buffer_on_next_transmit();
-                        }
-                    }
-                    Command::ModbusGetHoldings {
-                        register_address,
-                        size,
-                    } => {
-                        let mut modbus = MAX485_MODBUS.lock().await;
-                        if let Some(modbus) = modbus.as_mut() {
-                            log::info!("trying to get holding values for register_address: {:?}, and size: {}", register_address, size);
-                            if let Ok(Ok(values)) = with_timeout(
-                                Duration::from_millis(100),
-                                modbus.get_holdings(register_address, size),
-                            )
-                            .await
-                            {
-                                let bytes: Vec<u8, 256> =
-                                    values.iter().flat_map(|val| val.to_be_bytes()).collect();
-                                log::info!("holding values: {:?}", bytes);
-                                if socket.write_all(bytes.as_slice()).await.is_err() {
-                                    break;
-                                }
-                            } else {
-                                log::error!("modbus error => sending empty buffer");
-                                for _ in 0..(size * 2) {
-                                    if socket.write(&[0]).await.is_err() {
-                                        break;
-                                    }
-                                }
-                            }
-                        } else {
-                            log::error!("no modbus device");
-                        }
-                    }
-                    Command::ModbusGetInputRegisters {
-                        register_address,
-                        size,
-                    } => {
-                        let mut modbus = MAX485_MODBUS.lock().await;
-                        if let Some(modbus) = modbus.as_mut() {
-                            log::info!("trying to get input register values for register_address: {:?}, and size: {}", register_address, size);
-                            if let Ok(Ok(values)) = with_timeout(
-                                Duration::from_millis(100),
-                                modbus.get_input_registers(register_address, size),
-                            )
-                            .await
-                            {
-                                let bytes: Vec<u8, 256> =
-                                    values.iter().flat_map(|val| val.to_be_bytes()).collect();
-                                log::info!("register values: {:?}", bytes);
-                                if socket.write_all(bytes.as_slice()).await.is_err() {
-                                    break;
-                                }
-                            } else {
-                                log::error!("modbus error => sending empty buffer");
-                                for _ in 0..(size * 2) {
-                                    if socket.write(&[0]).await.is_err() {
-                                        break;
-                                    }
-                                }
-                            }
-                        } else {
-                            log::error!("no modbus device");
-                        }
-                    }
-                    Command::ModbusSetHoldings {
-                        register_address,
-                        new_holding_values,
-                    } => {
-                        let mut modbus = MAX485_MODBUS.lock().await;
-                        if let Some(modbus) = modbus.as_mut() {
-                            if modbus
-                                .set_holdings(register_address, &new_holding_values)
-                                .await
-                                .is_err()
-                            {
-                                log::error!("failed to set holding values");
-                            }
-                        }
-                    }
-                }
-            } else {
-                log::error!("could not recognize command");
-            }
-        }
+        while let Ok(Ok(())) = with_timeout(
+            Duration::from_secs(5),
+            send_receive_loop(&mut socket, &mut command_buf, &mut send_buf),
+        )
+        .await
+        {}
         log::error!("tcp socket error => reconnecting with new tcp socket");
     }
+}
+
+async fn send_receive_loop<'a>(
+    socket: &mut TcpSocket<'a>,
+    command_buf: &mut [u8],
+    send_buf: &mut [u8],
+) -> Result<(), embassy_net::tcp::Error> {
+    socket.read(command_buf).await?;
+    if let Ok(command) = command_buf[..].try_into() {
+        match command {
+            Command::GetVoltageIntervalms => {
+                send_buf[..2].clone_from_slice(&VOLTAGE_INTERVAL_MS.to_be_bytes());
+                log::info!("reply to Command::GetIntervalms => {:?}", &send_buf[..2]);
+                socket.write_all(&send_buf[..2]).await?;
+                log::info!("reply sent");
+            }
+            Command::GetPowerIntervalms => {
+                send_buf[..2].clone_from_slice(&POWER_INTERVAL_MS.to_be_bytes());
+                log::info!("reply to Command::GetIntervalms => {:?}", &send_buf[..2]);
+                socket.write_all(&send_buf[..2]).await?;
+                log::info!("reply sent");
+            }
+            Command::GetVoltageBufferSize => {
+                let size = core::mem::size_of::<usize>();
+                send_buf[..size].clone_from_slice(&RING_BUFFER_SIZE.to_be_bytes());
+                log::info!("usize is {size} bytes long");
+                log::info!(
+                    "reply to Command::GetVoltageBufferSize => {:?}",
+                    &send_buf[..size]
+                );
+                socket.write_all(&send_buf[..size]).await?;
+                log::info!("reply sent");
+            }
+            Command::GetBuffer(BufferType::Battery1Voltage) => {
+                if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
+                    adc_readings.ring_buffers[0]
+                        .send_diff(socket, send_buf)
+                        .await?;
+                }
+            }
+            Command::GetBuffer(BufferType::BatteryPackVoltage) => {
+                if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
+                    adc_readings.ring_buffers[1]
+                        .send_diff(socket, send_buf)
+                        .await?;
+                }
+            }
+            Command::GetBuffer(BufferType::PVVoltage) => {
+                if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
+                    adc_readings.ring_buffers[2]
+                        .send_diff(socket, send_buf)
+                        .await?;
+                }
+            }
+            Command::GetBuffer(BufferType::PVPower) => {
+                if let Some(power_readings) = (*POWER_READINGS.lock().await).as_mut() {
+                    power_readings.ring_buffers[0]
+                        .send_diff(socket, send_buf)
+                        .await?;
+                }
+            }
+            Command::GetBuffer(BufferType::InverterPower) => {
+                if let Some(power_readings) = (*POWER_READINGS.lock().await).as_mut() {
+                    power_readings.ring_buffers[1]
+                        .send_diff(socket, send_buf)
+                        .await?;
+                }
+            }
+            Command::RetransmitBuffers => {
+                if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
+                    adc_readings.ring_buffers[0].retransmit_whole_buffer_on_next_transmit();
+                    adc_readings.ring_buffers[1].retransmit_whole_buffer_on_next_transmit();
+                    adc_readings.ring_buffers[2].retransmit_whole_buffer_on_next_transmit();
+                }
+                if let Some(power_readings) = (*POWER_READINGS.lock().await).as_mut() {
+                    power_readings.ring_buffers[0].retransmit_whole_buffer_on_next_transmit();
+                    power_readings.ring_buffers[1].retransmit_whole_buffer_on_next_transmit();
+                }
+            }
+            Command::ModbusGetHoldings {
+                register_address,
+                size,
+            } => {
+                let mut modbus = MAX485_MODBUS.lock().await;
+                if let Some(modbus) = modbus.as_mut() {
+                    log::info!(
+                        "trying to get holding values for register_address: {:?}, and size: {}",
+                        register_address,
+                        size
+                    );
+                    if let Ok(Ok(values)) = with_timeout(
+                        Duration::from_millis(100),
+                        modbus.get_holdings(register_address, size),
+                    )
+                    .await
+                    {
+                        let bytes: Vec<u8, 256> =
+                            values.iter().flat_map(|val| val.to_be_bytes()).collect();
+                        log::info!("holding values: {:?}", bytes);
+                        socket.write_all(bytes.as_slice()).await?;
+                    } else {
+                        log::error!("modbus error => sending empty buffer");
+                        for _ in 0..(size * 2) {
+                            socket.write(&[0]).await?;
+                        }
+                    }
+                } else {
+                    log::error!("no modbus device");
+                }
+            }
+            Command::ModbusGetInputRegisters {
+                register_address,
+                size,
+            } => {
+                let mut modbus = MAX485_MODBUS.lock().await;
+                if let Some(modbus) = modbus.as_mut() {
+                    log::info!("trying to get input register values for register_address: {:?}, and size: {}", register_address, size);
+                    if let Ok(Ok(values)) = with_timeout(
+                        Duration::from_millis(100),
+                        modbus.get_input_registers(register_address, size),
+                    )
+                    .await
+                    {
+                        let bytes: Vec<u8, 256> =
+                            values.iter().flat_map(|val| val.to_be_bytes()).collect();
+                        log::info!("register values: {:?}", bytes);
+                        socket.write_all(bytes.as_slice()).await?;
+                    } else {
+                        log::error!("modbus error => sending empty buffer");
+                        for _ in 0..(size * 2) {
+                            socket.write(&[0]).await?;
+                        }
+                    }
+                } else {
+                    log::error!("no modbus device");
+                }
+            }
+            Command::ModbusSetHoldings {
+                register_address,
+                new_holding_values,
+            } => {
+                let mut modbus = MAX485_MODBUS.lock().await;
+                if let Some(modbus) = modbus.as_mut() {
+                    if modbus
+                        .set_holdings(register_address, &new_holding_values)
+                        .await
+                        .is_err()
+                    {
+                        log::error!("failed to set holding values");
+                    }
+                }
+            }
+        }
+    } else {
+        log::error!("could not recognize command");
+    }
+    Ok(())
 }
 
 pub async fn change_led_color(color: RGB8) {
