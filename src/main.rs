@@ -232,8 +232,7 @@ async fn aquire_power_readings_task() {
     loop {
         let mut power_pv_acc = 0;
         for _ in 0..10 {
-            let mut modbus = MAX485_MODBUS.lock().await;
-            if let Some(modbus) = modbus.as_mut() {
+            if let Some(modbus) = (*MAX485_MODBUS.lock().await).as_mut() {
                 if let Ok(Ok(values)) = with_timeout(
                     Duration::from_millis(100),
                     modbus.get_input_registers(0x3102, 2),
