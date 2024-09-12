@@ -14,12 +14,12 @@ use embassy_net::{IpAddress, IpListenEndpoint, Stack, StackResources};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
 use embassy_time::{with_timeout, Duration, Ticker, Timer};
-use embedded_svc::io::asynch::Write;
+use embedded_io_async::Write;
 use esp_backtrace as _;
 use esp_hal::analog::adc::{Adc, AdcCalScheme, AdcChannel, AdcConfig, AdcPin, Attenuation};
 use esp_hal::clock::Clocks;
 use esp_hal::gpio::{GpioPin, Io, Level, Output};
-use esp_hal::peripherals::{ADC1, RADIO_CLK, RNG, TIMG0, WIFI};
+use esp_hal::peripherals::{ADC1, RADIO_CLK, RNG, TIMG0, UART1, WIFI};
 use esp_hal::rmt::Rmt;
 use esp_hal::rng::Rng;
 use esp_hal::timer::timg::TimerGroup;
@@ -56,7 +56,8 @@ static mut TX_BUFFER: [u8; TX_BUFFER_SIZE] = [0; TX_BUFFER_SIZE];
 
 type LedT = SmartLedsAdapter<esp_hal::rmt::Channel<Blocking, 0>, 25>;
 static LED: Mutex<CriticalSectionRawMutex, Option<LedT>> = Mutex::new(None);
-static MAX485_MODBUS: Mutex<CriticalSectionRawMutex, Option<Max485Modbus>> = Mutex::new(None);
+static MAX485_MODBUS: Mutex<CriticalSectionRawMutex, Option<Max485Modbus<UART1>>> =
+    Mutex::new(None);
 
 macro_rules! mk_static {
     ($t:ty,$val:expr) => {{

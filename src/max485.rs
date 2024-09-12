@@ -5,21 +5,26 @@ use embedded_io_async::Read;
 use embedded_io_async::Write;
 use esp_hal::{
     gpio::{GpioPin, Output},
-    peripherals::UART1,
     uart::Uart,
     Async,
 };
 use heapless::Vec;
 use rmodbus::{client::ModbusRequest, guess_response_frame_len};
 
-pub struct Max485Modbus {
-    uart: Uart<'static, UART1, Async>,
+pub struct Max485Modbus<UART>
+where
+    UART: esp_hal::uart::Instance + 'static,
+{
+    uart: Uart<'static, UART, Async>,
     rw_pin: Output<'static, GpioPin<2>>,
     unit_id: u8,
 }
 
-impl Max485Modbus {
-    pub fn new(rw_pin: Output<'static, GpioPin<2>>, uart: Uart<'static, UART1, Async>) -> Self {
+impl<UART> Max485Modbus<UART>
+where
+    UART: esp_hal::uart::Instance + 'static,
+{
+    pub fn new(rw_pin: Output<'static, GpioPin<2>>, uart: Uart<'static, UART, Async>) -> Self {
         Max485Modbus {
             rw_pin,
             uart,
@@ -190,7 +195,10 @@ impl Max485Modbus {
     }
 }
 
-impl Write for Max485Modbus {
+impl<UART> Write for Max485Modbus<UART>
+where
+    UART: esp_hal::uart::Instance + 'static,
+{
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         self.rw_pin.set_high();
         embassy_time::block_for(Duration::from_micros(3));
@@ -214,7 +222,10 @@ impl Write for Max485Modbus {
     }
 }
 
-impl embedded_io::Read for Max485Modbus {
+impl<UART> embedded_io::Read for Max485Modbus<UART>
+where
+    UART: esp_hal::uart::Instance + 'static,
+{
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         self.rw_pin.set_low();
         embedded_io::Read::read(&mut self.uart, buf).map_err(|e| e.into())
@@ -232,7 +243,10 @@ impl embedded_io::Read for Max485Modbus {
     }
 }
 
-impl embedded_io_async::Read for Max485Modbus {
+impl<UART> embedded_io_async::Read for Max485Modbus<UART>
+where
+    UART: esp_hal::uart::Instance,
+{
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         self.rw_pin.set_low();
         embedded_io_async::Read::read(&mut self.uart, buf)
@@ -251,7 +265,10 @@ impl embedded_io_async::Read for Max485Modbus {
     }
 }
 
-impl embedded_svc::io::asynch::ErrorType for Max485Modbus {
+impl<UART> embedded_svc::io::asynch::ErrorType for Max485Modbus<UART>
+where
+    UART: esp_hal::uart::Instance,
+{
     type Error = Max485ModbusError;
 }
 
