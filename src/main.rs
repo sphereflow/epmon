@@ -13,7 +13,7 @@ use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{IpAddress, IpListenEndpoint, Stack, StackResources};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::mutex::Mutex;
-use embassy_time::{with_timeout, Duration, Timer};
+use embassy_time::{with_timeout, Duration, Ticker, Timer};
 use embedded_svc::io::asynch::Write;
 use esp_backtrace as _;
 use esp_hal::analog::adc::{Adc, AdcCalScheme, AdcChannel, AdcConfig, AdcPin, Attenuation};
@@ -170,6 +170,8 @@ async fn aquire_adc_readings_task(
     let mut r0;
     let mut r1;
     let mut r2;
+    let mut interval_ticker = Ticker::every(Duration::from_millis(VOLTAGE_INTERVAL_MS as u64));
+    let mut sub_ticker = Ticker::every(Duration::from_millis(VOLTAGE_INTERVAL_MS as u64 / 10));
     loop {
         let mut r0_acc = 0;
         let mut r1_acc = 0;
@@ -179,13 +181,12 @@ async fn aquire_adc_readings_task(
             r0_acc += adc1.read_adc(&mut pin0).await;
             r1_acc += adc1.read_adc(&mut pin1).await;
             r2_acc += adc1.read_adc(&mut pin2).await;
-            Timer::after_millis(VOLTAGE_INTERVAL_MS as u64 / 10).await;
+            sub_ticker.next().await;
         }
         // average them out
         r0 = r0_acc / 10;
         r1 = r1_acc / 10;
         r2 = r2_acc / 10;
-        // println!("r012: {r0:?}, {r1:?}, {r2:?}");
         {
             if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
                 adc_readings.push_value(0_usize, r0);
@@ -193,7 +194,7 @@ async fn aquire_adc_readings_task(
                 adc_readings.push_value(2_usize, r2);
             }
         }
-        Timer::after_millis(VOLTAGE_INTERVAL_MS as u64).await;
+        interval_ticker.next().await;
     }
 }
 
@@ -232,6 +233,8 @@ where
 async fn aquire_power_readings_task() {
     loop {
         let mut power_pv_acc = 0;
+        let mut interval_ticker =
+            Ticker::every(Duration::from_millis(POWER_INTERVAL_MS as u64 / 10));
         for _ in 0..10 {
             if let Some(modbus) = (*MAX485_MODBUS.lock().await).as_mut() {
                 if let Ok(Ok(values)) = with_timeout(
@@ -248,7 +251,7 @@ async fn aquire_power_readings_task() {
             } else {
                 log::error!("no modbus device");
             }
-            Timer::after_millis(POWER_INTERVAL_MS as u64 / 10).await;
+            interval_ticker.next().await;
         }
         {
             if let Some(power_readings) = (*POWER_READINGS.lock().await).as_mut() {
