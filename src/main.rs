@@ -3,6 +3,7 @@
 #![feature(type_alias_impl_trait)]
 #![allow(incomplete_features)]
 #![feature(generic_const_exprs)]
+#![feature(impl_trait_in_assoc_type)]
 
 use crate::ringbuffer::RingBuffer;
 use command::{BufferType, Command, COMMAND_SIZE};
