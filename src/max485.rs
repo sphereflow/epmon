@@ -11,16 +11,16 @@ use esp_hal::{
 use heapless::Vec;
 use rmodbus::{client::ModbusRequest, guess_response_frame_len};
 
-pub struct Max485Modbus<UART>
+pub struct Max485Modbus<'a, UART>
 where
-    UART: esp_hal::uart::Instance + 'static,
+    UART: esp_hal::uart::Instance + 'a,
 {
-    uart: Uart<'static, UART, Async>,
-    rw_pin: Output<'static, GpioPin<2>>,
+    uart: Uart<'a, UART, Async>,
+    rw_pin: Output<'a, GpioPin<2>>,
     unit_id: u8,
 }
 
-impl<UART> Max485Modbus<UART>
+impl<'a, UART> Max485Modbus<'a, UART>
 where
     UART: esp_hal::uart::Instance + 'static,
 {
@@ -195,9 +195,9 @@ where
     }
 }
 
-impl<UART> Write for Max485Modbus<UART>
+impl<'a, UART> Write for Max485Modbus<'a, UART>
 where
-    UART: esp_hal::uart::Instance + 'static,
+    UART: esp_hal::uart::Instance + 'a,
 {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         self.rw_pin.set_high();
@@ -222,7 +222,7 @@ where
     }
 }
 
-impl<UART> embedded_io::Read for Max485Modbus<UART>
+impl<'a, UART> embedded_io::Read for Max485Modbus<'a, UART>
 where
     UART: esp_hal::uart::Instance + 'static,
 {
@@ -243,7 +243,7 @@ where
     }
 }
 
-impl<UART> embedded_io_async::Read for Max485Modbus<UART>
+impl<'a, UART> embedded_io_async::Read for Max485Modbus<'a, UART>
 where
     UART: esp_hal::uart::Instance,
 {
@@ -265,7 +265,7 @@ where
     }
 }
 
-impl<UART> embedded_svc::io::asynch::ErrorType for Max485Modbus<UART>
+impl<'a, UART> embedded_svc::io::asynch::ErrorType for Max485Modbus<'a, UART>
 where
     UART: esp_hal::uart::Instance,
 {
