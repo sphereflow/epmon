@@ -46,7 +46,7 @@ const SSID: &str = env!("WIFI_SSID");
 const PASSWORD: &str = env!("WIFI_PASS");
 const PORT: u16 = 8900;
 const RING_BUFFER_SIZE: usize = 12000;
-const VOLTAGE_INTERVAL_MS: u16 = 200;
+const VOLTAGE_INTERVAL_MS: u16 = 150;
 const POWER_INTERVAL_MS: u16 = 10000;
 const RX_BUFFER_SIZE: usize = 1024;
 const TX_BUFFER_SIZE: usize = 1024;
@@ -171,8 +171,7 @@ async fn aquire_adc_readings_task(
     let mut r0;
     let mut r1;
     let mut r2;
-    let mut interval_ticker = Ticker::every(Duration::from_millis(VOLTAGE_INTERVAL_MS as u64));
-    let mut sub_ticker = Ticker::every(Duration::from_millis(VOLTAGE_INTERVAL_MS as u64 / 10));
+    let mut sub_ticker = Ticker::every(Duration::from_millis(VOLTAGE_INTERVAL_MS as u64 / 30));
     loop {
         let mut r0_acc = 0;
         let mut r1_acc = 0;
@@ -180,7 +179,9 @@ async fn aquire_adc_readings_task(
         // accumulate values
         for _ in 0..10 {
             r0_acc += adc1.read_adc(&mut pin0).await;
+            sub_ticker.next().await;
             r1_acc += adc1.read_adc(&mut pin1).await;
+            sub_ticker.next().await;
             r2_acc += adc1.read_adc(&mut pin2).await;
             sub_ticker.next().await;
         }
@@ -195,7 +196,6 @@ async fn aquire_adc_readings_task(
                 adc_readings.push_value(2_usize, r2);
             }
         }
-        interval_ticker.next().await;
     }
 }
 
