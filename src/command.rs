@@ -21,6 +21,7 @@ pub enum Command {
         register_address: u16,
         new_holding_values: [u16; 15],
     },
+    GetLastLogMessage,
 }
 
 impl Command {
@@ -110,6 +111,7 @@ impl TryFrom<&[u8]> for Command {
                     new_holding_values,
                 })
             }
+            [8, ..] => Ok(Command::GetLastLogMessage),
             _ => Err(()),
         }
     }

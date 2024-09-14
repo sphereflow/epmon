@@ -38,6 +38,7 @@ use smart_leds::{SmartLedsWrite, RGB8};
 pub mod command;
 pub mod max485;
 pub mod ringbuffer;
+pub mod string_logger;
 
 static ADC_READINGS: Mutex<CriticalSectionRawMutex, Option<AdcReadings>> = Mutex::new(None);
 static POWER_READINGS: Mutex<CriticalSectionRawMutex, Option<PowerReadings>> = Mutex::new(None);
@@ -70,7 +71,8 @@ macro_rules! mk_static {
 
 #[main]
 async fn main(spawner: Spawner) {
-    esp_println::logger::init_logger_from_env();
+    // esp_println::logger::init_logger_from_env();
+    string_logger::init_string_logger();
     let peripherals = Peripherals::take();
     let system = SystemControl::new(peripherals.SYSTEM);
     let clocks = ClockControl::max(system.clock_control).freeze();
@@ -582,6 +584,13 @@ async fn send_receive_loop<'a>(
                     {
                         log::error!("failed to set holding values");
                     }
+                }
+            }
+            Command::GetLastLogMessage => {
+                if let Some(message) = string_logger::LOG.try_take() {
+                    socket.write_all(message.as_bytes()).await?;
+                } else {
+                    socket.write_all("Could not get log".as_bytes()).await?;
                 }
             }
         }
