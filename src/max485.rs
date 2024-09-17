@@ -2,6 +2,7 @@ use embassy_time::Duration;
 use embassy_time::Timer;
 use embedded_io::ReadExactError;
 use embedded_io_async::Read;
+use embedded_io_async::ReadReady;
 use embedded_io_async::Write;
 use esp_hal::{
     gpio::{GpioPin, Output},
@@ -43,6 +44,12 @@ where
     ) -> Result<(), Max485ModbusError> {
         let mut modbus_request = ModbusRequest::new(self.unit_id, rmodbus::ModbusProto::Rtu);
         let mut request_buffer: heapless::Vec<u8, 256> = heapless::Vec::new();
+        if self.uart.read_ready()? {
+            request_buffer.resize(256, 0)?;
+            let num_bytes = self.read(&mut request_buffer).await?;
+            log::warn!("uart had leftovers from last meal! size: {}", num_bytes);
+            request_buffer.clear();
+        }
         modbus_request
             .generate_set_holdings_bulk(reg_address, register_values, &mut request_buffer)
             .map_err(|_e| Max485ModbusError::ModbusError)?;
@@ -75,6 +82,12 @@ where
     ) -> Result<Vec<u16, 128>, Max485ModbusError> {
         let mut modbus_request = ModbusRequest::new(self.unit_id, rmodbus::ModbusProto::Rtu);
         let mut request_buffer: Vec<u8, 256> = Vec::new();
+        if self.uart.read_ready()? {
+            request_buffer.resize(256, 0)?;
+            let num_bytes = self.read(&mut request_buffer).await?;
+            log::warn!("uart had leftovers from last meal! size: {}", num_bytes);
+            request_buffer.clear();
+        }
         modbus_request
             .generate_get_holdings(reg_address, holding_count as u16, &mut request_buffer)
             .map_err(|_error| Max485ModbusError::ModbusError)?;
@@ -110,6 +123,12 @@ where
     ) -> Result<Vec<u16, 128>, Max485ModbusError> {
         let mut modbus_request = ModbusRequest::new(self.unit_id, rmodbus::ModbusProto::Rtu);
         let mut request_buffer: Vec<u8, 256> = Vec::new();
+        if self.uart.read_ready()? {
+            request_buffer.resize(256, 0)?;
+            let num_bytes = self.read(&mut request_buffer).await?;
+            log::warn!("uart had leftovers from last meal! size: {}", num_bytes);
+            request_buffer.clear();
+        }
         modbus_request
             .generate_get_inputs(reg_address, register_count as u16, &mut request_buffer)
             .map_err(|_error| Max485ModbusError::ModbusError)?;
@@ -142,6 +161,12 @@ where
     ) -> Result<u8, Max485ModbusError> {
         let mut modbus_request = ModbusRequest::new(self.unit_id, rmodbus::ModbusProto::Rtu);
         let mut request_buffer: heapless::Vec<u8, 256> = heapless::Vec::new();
+        if self.uart.read_ready()? {
+            request_buffer.resize(256, 0)?;
+            let num_bytes = self.read(&mut request_buffer).await?;
+            log::warn!("uart had leftovers from last meal! size: {}", num_bytes);
+            request_buffer.clear();
+        }
         modbus_request
             .generate_get_coils(reg_address, count.max(8), &mut request_buffer)
             .map_err(|_error| Max485ModbusError::ModbusError)?;
