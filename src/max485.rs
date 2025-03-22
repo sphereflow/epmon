@@ -34,6 +34,47 @@ where
         }
     }
 
+    async fn do_request<'r>(
+        &mut self,
+        reg_address: u16,
+        request: Request<'r>,
+        request_buffer: &mut heapless::Vec<u8, 256>,
+    ) -> Result<ModbusRequest, Max485ModbusError> {
+        let mut modbus_request = ModbusRequest::new(self.unit_id, rmodbus::ModbusProto::Rtu);
+        // read leftover bytes from last modbus transfer
+        if self.uart.read_ready()? {
+            request_buffer.resize(256, 0)?;
+            let num_bytes = self.read(request_buffer).await?;
+            log::warn!("uart had leftovers from last meal! size: {}", num_bytes);
+            request_buffer.clear();
+        }
+        match request {
+            Request::SetHoldings { register_values } => {
+                modbus_request.generate_set_holdings_bulk(
+                    reg_address,
+                    register_values,
+                    request_buffer,
+                )?;
+                log::info!("set_holdings write request_buffer: {:?}", &request_buffer);
+            }
+            Request::GetHoldings { holding_count } => {
+                modbus_request.generate_get_holdings(reg_address, holding_count, request_buffer)?;
+            }
+            Request::GetRegister { register_count } => {
+                modbus_request.generate_get_inputs(reg_address, register_count, request_buffer)?;
+            }
+            Request::ReadCoils { coil_count } => {
+                modbus_request.generate_get_coils(
+                    reg_address,
+                    coil_count.max(8),
+                    request_buffer,
+                )?;
+            }
+        }
+        self.write_all(request_buffer).await?;
+        Ok(modbus_request)
+    }
+
     // a holding is a 16 bit register on the device
 
     // write consecutive registers
@@ -42,19 +83,14 @@ where
         reg_address: u16,
         register_values: &[u16],
     ) -> Result<(), Max485ModbusError> {
-        let mut modbus_request = ModbusRequest::new(self.unit_id, rmodbus::ModbusProto::Rtu);
         let mut request_buffer: heapless::Vec<u8, 256> = heapless::Vec::new();
-        if self.uart.read_ready()? {
-            request_buffer.resize(256, 0)?;
-            let num_bytes = self.read(&mut request_buffer).await?;
-            log::warn!("uart had leftovers from last meal! size: {}", num_bytes);
-            request_buffer.clear();
-        }
-        modbus_request
-            .generate_set_holdings_bulk(reg_address, register_values, &mut request_buffer)
-            .map_err(|_e| Max485ModbusError::ModbusError)?;
-        log::info!("set_holdings write request_buffer: {:?}", &request_buffer);
-        self.write_all(&request_buffer).await?;
+        let modbus_request = self
+            .do_request(
+                reg_address,
+                Request::SetHoldings { register_values },
+                &mut request_buffer,
+            )
+            .await?;
 
         // reuse the request_buffer for the response buffer
         request_buffer.clear();
@@ -80,19 +116,16 @@ where
         reg_address: u16,
         holding_count: u8,
     ) -> Result<Vec<u16, 128>, Max485ModbusError> {
-        let mut modbus_request = ModbusRequest::new(self.unit_id, rmodbus::ModbusProto::Rtu);
         let mut request_buffer: Vec<u8, 256> = Vec::new();
-        if self.uart.read_ready()? {
-            request_buffer.resize(256, 0)?;
-            let num_bytes = self.read(&mut request_buffer).await?;
-            log::warn!("uart had leftovers from last meal! size: {}", num_bytes);
-            request_buffer.clear();
-        }
-        modbus_request
-            .generate_get_holdings(reg_address, holding_count as u16, &mut request_buffer)
-            .map_err(|_error| Max485ModbusError::ModbusError)?;
-        log::info!("get_holdings => request buffer: {:?}", &request_buffer);
-        self.write_all(&request_buffer).await?;
+        let modbus_request = self
+            .do_request(
+                reg_address,
+                Request::GetHoldings {
+                    holding_count: holding_count as u16,
+                },
+                &mut request_buffer,
+            )
+            .await?;
 
         // reuse the request_buffer for the response buffer
         request_buffer.clear();
@@ -121,18 +154,16 @@ where
         reg_address: u16,
         register_count: u8,
     ) -> Result<Vec<u16, 128>, Max485ModbusError> {
-        let mut modbus_request = ModbusRequest::new(self.unit_id, rmodbus::ModbusProto::Rtu);
         let mut request_buffer: Vec<u8, 256> = Vec::new();
-        if self.uart.read_ready()? {
-            request_buffer.resize(256, 0)?;
-            let num_bytes = self.read(&mut request_buffer).await?;
-            log::warn!("uart had leftovers from last meal! size: {}", num_bytes);
-            request_buffer.clear();
-        }
-        modbus_request
-            .generate_get_inputs(reg_address, register_count as u16, &mut request_buffer)
-            .map_err(|_error| Max485ModbusError::ModbusError)?;
-        self.write_all(&request_buffer).await?;
+        let modbus_request = self
+            .do_request(
+                reg_address,
+                Request::GetRegister {
+                    register_count: register_count as u16,
+                },
+                &mut request_buffer,
+            )
+            .await?;
 
         // reuse the request_buffer for the response buffer
         request_buffer.clear();
@@ -157,20 +188,16 @@ where
     pub async fn get_coils(
         &mut self,
         reg_address: u16,
-        count: u16,
+        coil_count: u16,
     ) -> Result<u8, Max485ModbusError> {
-        let mut modbus_request = ModbusRequest::new(self.unit_id, rmodbus::ModbusProto::Rtu);
         let mut request_buffer: heapless::Vec<u8, 256> = heapless::Vec::new();
-        if self.uart.read_ready()? {
-            request_buffer.resize(256, 0)?;
-            let num_bytes = self.read(&mut request_buffer).await?;
-            log::warn!("uart had leftovers from last meal! size: {}", num_bytes);
-            request_buffer.clear();
-        }
-        modbus_request
-            .generate_get_coils(reg_address, count.max(8), &mut request_buffer)
-            .map_err(|_error| Max485ModbusError::ModbusError)?;
-        self.write_all(&request_buffer).await?;
+        let modbus_request = self
+            .do_request(
+                reg_address,
+                Request::ReadCoils { coil_count },
+                &mut request_buffer,
+            )
+            .await?;
 
         // reuse the request_buffer for the response buffer
         request_buffer.clear();
@@ -218,6 +245,14 @@ where
         let equals = rx_buf == required_response;
         Ok(equals)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+enum Request<'a> {
+    GetHoldings { holding_count: u16 },
+    SetHoldings { register_values: &'a [u16] },
+    GetRegister { register_count: u16 },
+    ReadCoils { coil_count: u16 },
 }
 
 impl<'a, UART> Write for Max485Modbus<'a, UART>
@@ -327,5 +362,11 @@ impl<E> From<embedded_io::ReadExactError<E>> for Max485ModbusError {
 impl From<()> for Max485ModbusError {
     fn from(_value: ()) -> Self {
         Max485ModbusError::BufferResizeError
+    }
+}
+
+impl From<rmodbus::ErrorKind> for Max485ModbusError {
+    fn from(_value: rmodbus::ErrorKind) -> Self {
+        Max485ModbusError::ModbusError
     }
 }
