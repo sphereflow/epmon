@@ -4,28 +4,19 @@ use embedded_io::ReadExactError;
 use embedded_io_async::Read;
 use embedded_io_async::ReadReady;
 use embedded_io_async::Write;
-use esp_hal::{
-    gpio::{GpioPin, Output},
-    uart::Uart,
-    Async,
-};
+use esp_hal::Async;
+use esp_hal::{gpio::Output, uart::Uart};
 use heapless::Vec;
 use rmodbus::{client::ModbusRequest, guess_response_frame_len};
 
-pub struct Max485Modbus<'a, UART>
-where
-    UART: esp_hal::uart::Instance + 'a,
-{
-    uart: Uart<'a, UART, Async>,
-    rw_pin: Output<'a, GpioPin<2>>,
+pub struct Max485Modbus<'a> {
+    uart: Uart<'a, Async>,
+    rw_pin: Output<'a>,
     unit_id: u8,
 }
 
-impl<'a, UART> Max485Modbus<'a, UART>
-where
-    UART: esp_hal::uart::Instance + 'static,
-{
-    pub fn new(rw_pin: Output<'static, GpioPin<2>>, uart: Uart<'static, UART, Async>) -> Self {
+impl<'a> Max485Modbus<'a> {
+    pub fn new(rw_pin: Output<'static>, uart: Uart<'static, Async>) -> Self {
         Max485Modbus {
             rw_pin,
             uart,
@@ -237,7 +228,7 @@ where
         let required_response = [1, 3, 2, 11, 144, 191, 24];
         self.rw_pin.set_high();
         self.uart.write_all(&tx_buf).await?;
-        self.uart.flush().await?;
+        self.uart.flush_async().await?;
         self.rw_pin.set_low();
         let mut rx_buf: [u8; 7] = [0; 7];
         embedded_io_async::Read::read(&mut self.uart, &mut rx_buf).await?;
@@ -255,21 +246,18 @@ enum Request<'a> {
     ReadCoils { coil_count: u16 },
 }
 
-impl<'a, UART> Write for Max485Modbus<'a, UART>
-where
-    UART: esp_hal::uart::Instance + 'a,
-{
+impl<'a> Write for Max485Modbus<'a> {
     async fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         self.rw_pin.set_high();
         embassy_time::block_for(Duration::from_micros(3));
-        let bytes_written = self.uart.write(buf).await?;
+        let bytes_written = embedded_io_async::Write::write(&mut self.uart, buf).await?;
         self.flush().await?;
         self.rw_pin.set_low();
         Ok(bytes_written)
     }
 
     async fn flush(&mut self) -> Result<(), Self::Error> {
-        self.uart.flush().await.map_err(|e| e.into())
+        self.uart.flush_async().await.map_err(|e| e.into())
     }
 
     async fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
@@ -282,10 +270,7 @@ where
     }
 }
 
-impl<'a, UART> embedded_io::Read for Max485Modbus<'a, UART>
-where
-    UART: esp_hal::uart::Instance + 'static,
-{
+impl<'a> embedded_io::Read for Max485Modbus<'a> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         self.rw_pin.set_low();
         embedded_io::Read::read(&mut self.uart, buf).map_err(|e| e.into())
@@ -303,10 +288,7 @@ where
     }
 }
 
-impl<'a, UART> embedded_io_async::Read for Max485Modbus<'a, UART>
-where
-    UART: esp_hal::uart::Instance,
-{
+impl<'a> embedded_io_async::Read for Max485Modbus<'a> {
     async fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         self.rw_pin.set_low();
         embedded_io_async::Read::read(&mut self.uart, buf)
@@ -325,16 +307,15 @@ where
     }
 }
 
-impl<'a, UART> embedded_svc::io::asynch::ErrorType for Max485Modbus<'a, UART>
-where
-    UART: esp_hal::uart::Instance,
-{
+impl<'a> embedded_svc::io::asynch::ErrorType for Max485Modbus<'a> {
     type Error = Max485ModbusError;
 }
 
 #[derive(Debug)]
 pub enum Max485ModbusError {
-    UartError(esp_hal::uart::Error),
+    UartRxError(esp_hal::uart::RxError),
+    UartTxError(esp_hal::uart::TxError),
+    IoError(esp_hal::uart::IoError),
     ModbusError,
     BufferResizeError,
     ByteCountError,
@@ -347,9 +328,21 @@ impl embedded_svc::io::Error for Max485ModbusError {
     }
 }
 
-impl From<esp_hal::uart::Error> for Max485ModbusError {
-    fn from(value: esp_hal::uart::Error) -> Self {
-        Max485ModbusError::UartError(value)
+impl From<esp_hal::uart::RxError> for Max485ModbusError {
+    fn from(value: esp_hal::uart::RxError) -> Self {
+        Max485ModbusError::UartRxError(value)
+    }
+}
+
+impl From<esp_hal::uart::TxError> for Max485ModbusError {
+    fn from(value: esp_hal::uart::TxError) -> Self {
+        Max485ModbusError::UartTxError(value)
+    }
+}
+
+impl From<esp_hal::uart::IoError> for Max485ModbusError {
+    fn from(value: esp_hal::uart::IoError) -> Self {
+        Max485ModbusError::IoError(value)
     }
 }
 
