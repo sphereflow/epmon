@@ -110,8 +110,8 @@ async fn main(spawner: Spawner) {
     let uart_config = esp_hal::uart::Config::default();
     if let Ok(uart_peripheral) = Uart::new(peripherals.UART1, uart_config) {
         let uart_async: Uart<'static, Async> = uart_peripheral
-            .with_tx(peripherals.GPIO10)
-            .with_rx(peripherals.GPIO18)
+            .with_tx(peripherals.GPIO18)
+            .with_rx(peripherals.GPIO10)
             .into_async();
         let modbus = Max485Modbus::new(
             Output::new(peripherals.GPIO2, Level::Low, OutputConfig::default()),
