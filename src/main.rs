@@ -421,12 +421,24 @@ async fn network_handler(
         // send receive loop
         let mut command_buf = [0; COMMAND_SIZE];
         let mut send_buf: [u8; 1024] = [0; 1024];
-        while let Ok(Ok(())) = with_timeout(
-            Duration::from_secs(5),
-            send_receive_loop(&mut socket, &mut command_buf, &mut send_buf, modbus_mutex),
-        )
-        .await
-        {}
+        loop {
+            let send_receive_loop_result = with_timeout(
+                Duration::from_secs(5),
+                send_receive_loop(&mut socket, &mut command_buf, &mut send_buf, modbus_mutex),
+            )
+            .await;
+            match send_receive_loop_result {
+                Ok(Ok(())) => {}
+                Err(e) => {
+                    log::error!("Send Receive loop timeout: {:?}", e);
+                    break;
+                }
+                Ok(Err(e)) => {
+                    log::error!("Send Receive loop error: {:?}", e);
+                    break;
+                }
+            }
+        }
         log::error!("tcp socket error => reconnecting with new tcp socket");
     }
 }
