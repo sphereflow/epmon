@@ -235,18 +235,19 @@ async fn aquire_power_readings_task(modbus_mutex: &'static ModbusMutex) {
         let mut interval_ticker =
             Ticker::every(Duration::from_millis(POWER_INTERVAL_MS as u64 / 10));
         for _ in 0..10 {
-            // if let Some(modbus) = (*MAX485_MODBUS.lock().await).as_mut() {
-            let mut modbus = modbus_mutex.lock().await;
-            if let Ok(Ok(values)) = with_timeout(
-                Duration::from_millis(100),
-                modbus.get_input_registers(0x3102, 2),
-            )
-            .await
             {
-                let power = (values[0] as u32) + ((values[1] as u32) << 16);
-                power_pv_acc += power;
-            } else {
-                log::error!("aquire_power_readings_task: timeout or modbus error");
+                let mut modbus = modbus_mutex.lock().await;
+                if let Ok(Ok(values)) = with_timeout(
+                    Duration::from_millis(100),
+                    modbus.get_input_registers(0x3102, 2),
+                )
+                .await
+                {
+                    let power = (values[0] as u32) + ((values[1] as u32) << 16);
+                    power_pv_acc += power;
+                } else {
+                    log::error!("aquire_power_readings_task: timeout or modbus error");
+                }
             }
             // } else {
             //    log::error!("no modbus device");
@@ -379,9 +380,7 @@ async fn network_handler(
     let mut rx_meta = [PacketMetadata::EMPTY];
     // connect / reconnect loop
     loop {
-        log::info!("changing led color");
         change_led_color(RGB8::new(0, 0, 50), led_mutex).await;
-        log::info!("led is blue");
         let mut udp_socket = UdpSocket::new(stack, &mut rx_meta, &mut rx_buffer, &mut [], &mut []);
         match udp_socket.bind(IpListenEndpoint {
             addr: Some(IpAddress::v4(0, 0, 0, 0)),
@@ -526,6 +525,7 @@ async fn send_receive_loop<'a>(
                 )
                 .await
                 {
+                    drop(modbus);
                     let bytes: Vec<u8, 256> =
                         values.iter().flat_map(|val| val.to_be_bytes()).collect();
                     log::info!("holding values: {:?}", bytes);
@@ -553,6 +553,7 @@ async fn send_receive_loop<'a>(
                 )
                 .await
                 {
+                    drop(modbus);
                     let bytes: Vec<u8, 256> =
                         values.iter().flat_map(|val| val.to_be_bytes()).collect();
                     log::info!("register values: {:?}", bytes);
@@ -574,6 +575,7 @@ async fn send_receive_loop<'a>(
                     .await
                     .is_err()
                 {
+                    drop(modbus);
                     log::error!("failed to set holding values");
                 }
             }
