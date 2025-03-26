@@ -451,6 +451,7 @@ async fn send_receive_loop<'a>(
 ) -> Result<(), embassy_net::tcp::Error> {
     socket.read(command_buf).await?;
     if let Ok(command) = command_buf[..].try_into() {
+        log::info!("received command: {:?}", command);
         match command {
             Command::GetVoltageIntervalms => {
                 send_buf[..2].clone_from_slice(&VOLTAGE_INTERVAL_MS.to_be_bytes());
