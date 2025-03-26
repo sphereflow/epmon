@@ -235,23 +235,19 @@ async fn aquire_power_readings_task(modbus_mutex: &'static ModbusMutex) {
         let mut interval_ticker =
             Ticker::every(Duration::from_millis(POWER_INTERVAL_MS as u64 / 10));
         for _ in 0..10 {
+            let mut modbus = modbus_mutex.lock().await;
+            if let Ok(Ok(values)) = with_timeout(
+                Duration::from_millis(100),
+                modbus.get_input_registers(0x3102, 2),
+            )
+            .await
             {
-                let mut modbus = modbus_mutex.lock().await;
-                if let Ok(Ok(values)) = with_timeout(
-                    Duration::from_millis(100),
-                    modbus.get_input_registers(0x3102, 2),
-                )
-                .await
-                {
-                    let power = (values[0] as u32) + ((values[1] as u32) << 16);
-                    power_pv_acc += power;
-                } else {
-                    log::error!("aquire_power_readings_task: timeout or modbus error");
-                }
+                drop(modbus);
+                let power = (values[0] as u32) + ((values[1] as u32) << 16);
+                power_pv_acc += power;
+            } else {
+                log::error!("aquire_power_readings_task: timeout or modbus error");
             }
-            // } else {
-            //    log::error!("no modbus device");
-            // }
             interval_ticker.next().await;
         }
         {
