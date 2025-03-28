@@ -235,14 +235,15 @@ async fn aquire_power_readings_task(modbus_mutex: &'static ModbusMutex) {
         let mut interval_ticker =
             Ticker::every(Duration::from_millis(POWER_INTERVAL_MS as u64 / 10));
         for _ in 0..10 {
-            let mut modbus = modbus_mutex.lock().await;
-            if let Ok(Ok(values)) = with_timeout(
-                Duration::from_millis(100),
-                modbus.get_input_registers(0x3102, 2),
-            )
-            .await
-            {
-                drop(modbus);
+            let register = {
+                let mut modbus = modbus_mutex.lock().await;
+                with_timeout(
+                    Duration::from_millis(100),
+                    modbus.get_input_registers(0x3102, 2),
+                )
+                .await
+            };
+            if let Ok(Ok(values)) = register {
                 let power = (values[0] as u32) + ((values[1] as u32) << 16);
                 power_pv_acc += power;
             } else {
@@ -522,19 +523,20 @@ async fn send_receive_loop<'a>(
                 register_address,
                 size,
             } => {
-                let mut modbus = modbus_mutex.lock().await;
-                log::info!(
-                    "trying to get holding values for register_address: {:?}, and size: {}",
-                    register_address,
-                    size
-                );
-                if let Ok(Ok(values)) = with_timeout(
-                    Duration::from_millis(100),
-                    modbus.get_holdings(register_address, size),
-                )
-                .await
-                {
-                    drop(modbus);
+                let register = {
+                    let mut modbus = modbus_mutex.lock().await;
+                    log::info!(
+                        "trying to get holding values for register_address: {:?}, and size: {}",
+                        register_address,
+                        size
+                    );
+                    with_timeout(
+                        Duration::from_millis(100),
+                        modbus.get_holdings(register_address, size),
+                    )
+                    .await
+                };
+                if let Ok(Ok(values)) = register {
                     let bytes: Vec<u8, 256> =
                         values.iter().flat_map(|val| val.to_be_bytes()).collect();
                     log::info!("holding values: {:?}", bytes);
@@ -550,19 +552,20 @@ async fn send_receive_loop<'a>(
                 register_address,
                 size,
             } => {
-                let mut modbus = modbus_mutex.lock().await;
-                log::info!(
+                let register = {
+                    let mut modbus = modbus_mutex.lock().await;
+                    log::info!(
                     "trying to get input register values for register_address: {:?}, and size: {}",
                     register_address,
                     size
                 );
-                if let Ok(Ok(values)) = with_timeout(
-                    Duration::from_millis(100),
-                    modbus.get_input_registers(register_address, size),
-                )
-                .await
-                {
-                    drop(modbus);
+                    with_timeout(
+                        Duration::from_millis(100),
+                        modbus.get_input_registers(register_address, size),
+                    )
+                    .await
+                };
+                if let Ok(Ok(values)) = register {
                     let bytes: Vec<u8, 256> =
                         values.iter().flat_map(|val| val.to_be_bytes()).collect();
                     log::info!("register values: {:?}", bytes);
@@ -578,13 +581,13 @@ async fn send_receive_loop<'a>(
                 register_address,
                 new_holding_values,
             } => {
-                let mut modbus = modbus_mutex.lock().await;
-                if modbus
-                    .set_holdings(register_address, &new_holding_values)
-                    .await
-                    .is_err()
-                {
-                    drop(modbus);
+                let register = {
+                    let mut modbus = modbus_mutex.lock().await;
+                    modbus
+                        .set_holdings(register_address, &new_holding_values)
+                        .await
+                };
+                if register.is_err() {
                     log::error!("failed to set holding values");
                 }
             }
