@@ -14,7 +14,6 @@ use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::mutex::Mutex;
 use embassy_time::{with_timeout, Duration, Ticker, Timer};
 use embedded_io_async::*;
-use esp_alloc::{self as _, HeapStats};
 use esp_backtrace as _;
 use esp_hal::analog::adc::{Adc, AdcCalScheme, AdcChannel, AdcConfig, AdcPin, Attenuation};
 use esp_hal::gpio::{GpioPin, Level, Output, OutputConfig};
