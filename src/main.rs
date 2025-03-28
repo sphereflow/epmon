@@ -14,7 +14,7 @@ use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::mutex::Mutex;
 use embassy_time::{with_timeout, Duration, Ticker, Timer};
 use embedded_io_async::*;
-use esp_alloc as _;
+use esp_alloc::{self as _, HeapStats};
 use esp_backtrace as _;
 use esp_hal::analog::adc::{Adc, AdcCalScheme, AdcChannel, AdcConfig, AdcPin, Attenuation};
 use esp_hal::gpio::{GpioPin, Level, Output, OutputConfig};
@@ -77,7 +77,6 @@ async fn main(spawner: Spawner) {
     // string_logger::init_string_logger();
     let peripherals = esp_hal::init(Config::default());
 
-    // set up smart_led
     // set up adc
     let mut adc_config = AdcConfig::new();
     let adc_pin0 =
@@ -96,6 +95,7 @@ async fn main(spawner: Spawner) {
         power_readings.replace(PowerReadings::default());
     }
 
+    // set up smartled
     static LED: StaticCell<LedMutex> = StaticCell::new();
     let rmt = Rmt::new(peripherals.RMT, Rate::from_mhz(80)).unwrap();
     let rmt_buffer = smartLedBuffer!(1);
@@ -148,6 +148,8 @@ async fn main(spawner: Spawner) {
 
     loop {
         // run_tests().await;
+        let stats = esp_alloc::HEAP.stats();
+        println!("{stats}");
         Timer::after_secs(1).await;
     }
 }
