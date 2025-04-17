@@ -143,10 +143,13 @@ async fn main(spawner: Spawner) {
         spawner
             .spawn(network_handler(stack, modbus_mutex, led_mutex))
             .expect("could not spawn network_handler");
+
+        // wait for some ADC readings to come in
+        // Timer::after_secs(2).await;
+        // run_tests(modbus_mutex, led_mutex).await;
     }
 
     loop {
-        // run_tests().await;
         let stats = esp_alloc::HEAP.stats();
         println!("{stats}");
         Timer::after_secs(1).await;
@@ -294,7 +297,10 @@ async fn init_wifi(
         esp_wifi::init(TimerGroup::new(timg0).timer0, Rng::new(rng), radio_clk).unwrap()
     );
 
-    let (wifi_controller, interfaces) = esp_wifi::wifi::new(init, wifi).unwrap();
+    let (mut wifi_controller, interfaces) = esp_wifi::wifi::new(init, wifi).unwrap();
+    wifi_controller
+        .set_power_saving(esp_wifi::config::PowerSaveMode::None)
+        .expect("wifi_controller.set_power_saving(...) failed");
     let wifi_interface = interfaces.sta;
 
     let config = embassy_net::Config::dhcpv4(Default::default());

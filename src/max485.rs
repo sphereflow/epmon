@@ -225,7 +225,7 @@ impl<'a> Max485Modbus<'a> {
 
     pub async fn test_holding(&mut self) -> Result<bool, Max485ModbusError> {
         let tx_buf = [1, 3, 144, 3, 0, 1, 89, 10];
-        let required_response = [1, 3, 2, 11, 144, 191, 24];
+        let required_response = [1, 3, 2, 11, 84, 190, 139];
         self.rw_pin.set_high();
         self.uart.write_all(&tx_buf).await?;
         self.uart.flush_async().await?;
