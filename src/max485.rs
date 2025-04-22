@@ -31,6 +31,10 @@ impl<'a> Max485Modbus<'a> {
         request: Request<'r>,
         request_buffer: &mut heapless::Vec<u8, 256>,
     ) -> Result<ModbusRequest, Max485ModbusError> {
+        // logs rx errors from previous requests and 'clears' them
+        if let Err(e) = self.uart.check_for_rx_errors() {
+            log::error!("Max485Modbus::do_request(...) -> RxError: {:?}", e);
+        }
         let mut modbus_request = ModbusRequest::new(self.unit_id, rmodbus::ModbusProto::Rtu);
         // read leftover bytes from last modbus transfer
         if self.uart.read_ready()? {
