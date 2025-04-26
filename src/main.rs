@@ -30,6 +30,7 @@ use esp_println::println;
 use esp_wifi::wifi::{WifiController, WifiDevice, WifiEvent, WifiState};
 use esp_wifi::EspWifiController;
 use heapless::Vec;
+use last_error::LastError;
 use max485::Max485Modbus;
 use ringbuffer::RingBuffer;
 use smart_leds::colors::*;
@@ -37,6 +38,7 @@ use smart_leds::{SmartLedsWrite, RGB8};
 use static_cell::StaticCell;
 
 pub mod command;
+pub mod last_error;
 pub mod max485;
 pub mod ringbuffer;
 pub mod string_logger;
@@ -59,6 +61,7 @@ static mut TX_BUFFER: [u8; TX_BUFFER_SIZE] = [0; TX_BUFFER_SIZE];
 type LedT = SmartLedsAdapter<esp_hal::rmt::Channel<Blocking, 0>, 25>;
 type LedMutex = Mutex<CriticalSectionRawMutex, LedT>;
 type ModbusMutex = Mutex<NoopRawMutex, Max485Modbus<'static>>;
+type LastErrorMutex = Mutex<NoopRawMutex, LastError>;
 
 macro_rules! mk_static {
     ($t:ty,$val:expr) => {{
@@ -75,6 +78,9 @@ async fn main(spawner: Spawner) {
     esp_println::logger::init_logger_from_env();
     // string_logger::init_string_logger();
     let peripherals = esp_hal::init(Config::default());
+
+    static LAST_ERROR: StaticCell<LastErrorMutex> = StaticCell::new();
+    let last_error_mutex = LAST_ERROR.init(Mutex::new(LastError::new()));
 
     // set up adc
     let mut adc_config = AdcConfig::new();
@@ -141,7 +147,12 @@ async fn main(spawner: Spawner) {
         )
         .await;
         spawner
-            .spawn(network_handler(stack, modbus_mutex, led_mutex))
+            .spawn(network_handler(
+                stack,
+                last_error_mutex,
+                modbus_mutex,
+                led_mutex,
+            ))
             .expect("could not spawn network_handler");
 
         // wait for some ADC readings to come in
@@ -376,6 +387,7 @@ async fn net_task(mut stack: Runner<'static, WifiDevice<'static>>) {
 #[embassy_executor::task]
 async fn network_handler(
     stack: Stack<'static>,
+    last_error_mutex: &'static LastErrorMutex,
     modbus_mutex: &'static ModbusMutex,
     led_mutex: &'static LedMutex,
 ) {
@@ -428,7 +440,13 @@ async fn network_handler(
         loop {
             let send_receive_loop_result = with_timeout(
                 Duration::from_secs(5),
-                send_receive_loop(&mut socket, &mut command_buf, &mut send_buf, modbus_mutex),
+                send_receive_loop(
+                    &mut socket,
+                    &mut command_buf,
+                    &mut send_buf,
+                    last_error_mutex,
+                    modbus_mutex,
+                ),
             )
             .await;
             match send_receive_loop_result {
@@ -451,6 +469,7 @@ async fn send_receive_loop<'a>(
     socket: &mut TcpSocket<'a>,
     command_buf: &mut [u8],
     send_buf: &mut [u8],
+    last_error_mutex: &'static LastErrorMutex,
     modbus_mutex: &'static ModbusMutex,
 ) -> Result<(), embassy_net::tcp::Error> {
     socket.read(command_buf).await?;
@@ -543,6 +562,8 @@ async fn send_receive_loop<'a>(
                     )
                     .await
                 };
+                let mut last_error = last_error_mutex.lock().await;
+                *last_error = LastError::from_timeout_get_register_or_holding(&register);
                 if let Ok(Ok(values)) = register {
                     let bytes: Vec<u8, 256> =
                         values.iter().flat_map(|val| val.to_be_bytes()).collect();
@@ -572,6 +593,8 @@ async fn send_receive_loop<'a>(
                     )
                     .await
                 };
+                let mut last_error = last_error_mutex.lock().await;
+                *last_error = LastError::from_timeout_get_register_or_holding(&register);
                 if let Ok(Ok(values)) = register {
                     let bytes: Vec<u8, 256> =
                         values.iter().flat_map(|val| val.to_be_bytes()).collect();
@@ -599,11 +622,13 @@ async fn send_receive_loop<'a>(
                 }
             }
             Command::GetLastLogMessage => {
-                if let Some(message) = string_logger::LOG.try_take() {
-                    socket.write_all(message.as_bytes()).await?;
-                } else {
-                    socket.write_all("Could not get log".as_bytes()).await?;
-                }
+                // if let Some(message) = string_logger::LOG.try_take() {
+                //     socket.write_all(message.as_bytes()).await?;
+                // } else {
+                //     socket.write_all("Could not get log".as_bytes()).await?;
+                // }
+                let mut last_error = last_error_mutex.lock().await;
+                last_error.send(socket, send_buf).await?;
             }
         }
     } else {
