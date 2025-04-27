@@ -133,7 +133,8 @@ async fn main(spawner: Spawner) {
             log::error!("{err:?}");
         }
 
-        if let Err(err) = spawner.spawn(aquire_power_readings_task(modbus_mutex)) {
+        if let Err(err) = spawner.spawn(aquire_power_readings_task(modbus_mutex, last_error_mutex))
+        {
             log::error!("could not spawn power task");
             log::error!("{err:?}");
         }
@@ -244,7 +245,10 @@ where
 }
 
 #[embassy_executor::task]
-async fn aquire_power_readings_task(modbus_mutex: &'static ModbusMutex) {
+async fn aquire_power_readings_task(
+    modbus_mutex: &'static ModbusMutex,
+    last_error_mutex: &'static LastErrorMutex,
+) {
     loop {
         let mut power_pv_acc = 0;
         let mut interval_ticker =
@@ -262,6 +266,8 @@ async fn aquire_power_readings_task(modbus_mutex: &'static ModbusMutex) {
                 let power = (values[0] as u32) + ((values[1] as u32) << 16);
                 power_pv_acc += power;
             } else {
+                let mut last_error = last_error_mutex.lock().await;
+                *last_error = LastError::from_timeout_get_register_or_holding(&register);
                 log::error!("aquire_power_readings_task: timeout or modbus error");
             }
             interval_ticker.next().await;
