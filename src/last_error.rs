@@ -1,5 +1,5 @@
 use crate::max485::Max485ModbusError;
-use core::fmt::Write;
+use core::{fmt::Write, str::FromStr};
 use embassy_net::tcp::TcpSocket;
 use embassy_time::TimeoutError;
 use heapless::{String, Vec};
@@ -10,7 +10,12 @@ pub struct LastError {
 
 impl LastError {
     pub fn new() -> Self {
-        LastError { msg: None }
+        LastError {
+            msg: Some(
+                String::from_str("first log message")
+                    .expect("LastError::new() : could not convert str to String"),
+            ),
+        }
     }
 
     pub fn from_timeout_get_register_or_holding(
