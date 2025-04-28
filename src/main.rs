@@ -5,21 +5,20 @@
 #![feature(generic_const_exprs)]
 #![feature(impl_trait_in_assoc_type)]
 
+use adc_readings::{aquire_adc_readings_task, AdcCal, AdcReadings};
 use command::{BufferType, Command, COMMAND_SIZE};
 use embassy_executor::Spawner;
 use embassy_net::tcp::TcpSocket;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
-use embassy_net::{IpAddress, IpListenEndpoint, Runner, Stack, StackResources};
+use embassy_net::{IpAddress, IpListenEndpoint, Stack};
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::mutex::Mutex;
-use embassy_time::{with_timeout, Duration, Ticker, Timer};
+use embassy_time::{with_timeout, Duration, Timer};
 use embedded_io_async::*;
 use esp_backtrace as _;
-use esp_hal::analog::adc::{Adc, AdcCalScheme, AdcChannel, AdcConfig, AdcPin, Attenuation};
-use esp_hal::gpio::{GpioPin, Level, Output, OutputConfig};
-use esp_hal::peripherals::{ADC1, RADIO_CLK, RNG, TIMG0, WIFI};
+use esp_hal::analog::adc::{Adc, AdcConfig, Attenuation};
+use esp_hal::gpio::{Level, Output, OutputConfig};
 use esp_hal::rmt::Rmt;
-use esp_hal::rng::Rng;
 use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
 use esp_hal::uart::Uart;
@@ -27,27 +26,26 @@ use esp_hal::{Async, Blocking, Config};
 use esp_hal_embassy::main;
 use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
 use esp_println::println;
-use esp_wifi::wifi::{WifiController, WifiDevice, WifiEvent, WifiState};
-use esp_wifi::EspWifiController;
 use heapless::Vec;
 use last_error::LastError;
 use max485::Max485Modbus;
-use ringbuffer::RingBuffer;
-use smart_leds::colors::*;
+use power_readings::PowerReadings;
 use smart_leds::{SmartLedsWrite, RGB8};
 use static_cell::StaticCell;
 
+pub mod adc_readings;
 pub mod command;
+pub mod init_network;
 pub mod last_error;
 pub mod max485;
+pub mod power_readings;
 pub mod ringbuffer;
 pub mod string_logger;
+pub mod tests;
 
 static ADC_READINGS: Mutex<CriticalSectionRawMutex, Option<AdcReadings>> = Mutex::new(None);
 static POWER_READINGS: Mutex<CriticalSectionRawMutex, Option<PowerReadings>> = Mutex::new(None);
 
-const SSID: &str = env!("WIFI_SSID");
-const PASSWORD: &str = env!("WIFI_PASS");
 const PORT: u16 = 8900;
 const RING_BUFFER_SIZE: usize = 12000;
 const VOLTAGE_INTERVAL_MS: u16 = 150;
@@ -62,15 +60,6 @@ type LedT = SmartLedsAdapter<esp_hal::rmt::Channel<Blocking, 0>, 25>;
 type LedMutex = Mutex<CriticalSectionRawMutex, LedT>;
 type ModbusMutex = Mutex<NoopRawMutex, Max485Modbus<'static>>;
 type LastErrorMutex = Mutex<NoopRawMutex, LastError>;
-
-macro_rules! mk_static {
-    ($t:ty,$val:expr) => {{
-        static STATIC_CELL: static_cell::StaticCell<$t> = static_cell::StaticCell::new();
-        #[deny(unused_attributes)]
-        let x = STATIC_CELL.uninit().write(($val));
-        x
-    }};
-}
 
 #[main]
 async fn main(spawner: Spawner) {
@@ -133,13 +122,15 @@ async fn main(spawner: Spawner) {
             log::error!("{err:?}");
         }
 
-        if let Err(err) = spawner.spawn(aquire_power_readings_task(modbus_mutex, last_error_mutex))
-        {
+        if let Err(err) = spawner.spawn(power_readings::aquire_power_readings_task(
+            modbus_mutex,
+            last_error_mutex,
+        )) {
             log::error!("could not spawn power task");
             log::error!("{err:?}");
         }
 
-        let stack = init_wifi(
+        let stack = init_network::init_wifi(
             peripherals.TIMG0,
             peripherals.RNG,
             peripherals.RADIO_CLK,
@@ -166,228 +157,6 @@ async fn main(spawner: Spawner) {
         println!("{stats}");
         Timer::after_secs(1).await;
     }
-}
-
-type AdcCal = esp_hal::analog::adc::AdcCalBasic<ADC1>;
-// type AdcCal = esp_hal::analog::adc::AdcCalLine<ADC1>;
-// type AdcCal = esp_hal::analog::adc::AdcCalCurve<ADC1>;
-type PIN0 = AdcPin<GpioPin<4>, ADC1, AdcCal>;
-type PIN1 = AdcPin<GpioPin<5>, ADC1, AdcCal>;
-type PIN2 = AdcPin<GpioPin<6>, ADC1, AdcCal>;
-
-#[embassy_executor::task]
-async fn aquire_adc_readings_task(
-    mut adc1: Adc<'static, ADC1, Blocking>,
-    mut pin0: PIN0,
-    mut pin1: PIN1,
-    mut pin2: PIN2,
-) {
-    let mut r0;
-    let mut r1;
-    let mut r2;
-    let mut sub_ticker = Ticker::every(Duration::from_millis(VOLTAGE_INTERVAL_MS as u64 / 30));
-    loop {
-        let mut r0_acc = 0;
-        let mut r1_acc = 0;
-        let mut r2_acc = 0;
-        // accumulate values
-        for _ in 0..10 {
-            r0_acc += adc1.read_adc(&mut pin0).await;
-            sub_ticker.next().await;
-            r1_acc += adc1.read_adc(&mut pin1).await;
-            sub_ticker.next().await;
-            r2_acc += adc1.read_adc(&mut pin2).await;
-            sub_ticker.next().await;
-        }
-        // average them out
-        r0 = r0_acc / 10;
-        r1 = r1_acc / 10;
-        r2 = r2_acc / 10;
-        {
-            if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
-                adc_readings.push_value(0_usize, r0);
-                adc_readings.push_value(1_usize, r1);
-                adc_readings.push_value(2_usize, r2);
-            }
-        }
-    }
-}
-
-trait ReadAdc {
-    type ADC: esp_hal::analog::adc::RegisterAccess;
-    async fn read_adc<const GPIO_NUM: u8>(
-        &mut self,
-        pin: &mut AdcPin<GpioPin<GPIO_NUM>, Self::ADC, AdcCal>,
-    ) -> u16
-    where
-        GpioPin<GPIO_NUM>: AdcChannel;
-}
-
-impl<'a, ADC: esp_hal::analog::adc::RegisterAccess> ReadAdc for Adc<'a, ADC, Blocking>
-where
-    AdcCal: AdcCalScheme<ADC>,
-{
-    type ADC = ADC;
-    async fn read_adc<const GPIO_NUM: u8>(
-        &mut self,
-        pin: &mut AdcPin<GpioPin<GPIO_NUM>, ADC, AdcCal>,
-    ) -> u16
-    where
-        GpioPin<GPIO_NUM>: AdcChannel,
-    {
-        loop {
-            if let Ok(val) = self.read_oneshot(pin) {
-                return val;
-            }
-            Timer::after_micros(100).await;
-        }
-    }
-}
-
-#[embassy_executor::task]
-async fn aquire_power_readings_task(
-    modbus_mutex: &'static ModbusMutex,
-    last_error_mutex: &'static LastErrorMutex,
-) {
-    loop {
-        let mut power_pv_acc = 0;
-        let mut interval_ticker =
-            Ticker::every(Duration::from_millis(POWER_INTERVAL_MS as u64 / 10));
-        for _ in 0..10 {
-            let register = {
-                let mut modbus = modbus_mutex.lock().await;
-                with_timeout(
-                    Duration::from_millis(100),
-                    modbus.get_input_registers(0x3102, 2),
-                )
-                .await
-            };
-            if let Ok(Ok(values)) = register {
-                let power = (values[0] as u32) + ((values[1] as u32) << 16);
-                power_pv_acc += power;
-            } else {
-                let mut last_error = last_error_mutex.lock().await;
-                *last_error = LastError::from_timeout_modbus_result(&register);
-                log::error!("aquire_power_readings_task: timeout or modbus error");
-            }
-            interval_ticker.next().await;
-        }
-        {
-            if let Some(power_readings) = (*POWER_READINGS.lock().await).as_mut() {
-                power_readings.push_value(0, (power_pv_acc / 1000) as u16);
-            }
-        }
-    }
-}
-
-#[derive(Default, Debug)]
-struct AdcReadings {
-    pub ring_buffers: [RingBuffer<RING_BUFFER_SIZE>; 3],
-}
-
-impl AdcReadings {
-    fn push_value(&mut self, ix: usize, val: u16) {
-        self.ring_buffers[ix].push(val);
-    }
-}
-
-#[derive(Default, Clone, Debug)]
-struct PowerReadings {
-    pub ring_buffers: [RingBuffer<RING_BUFFER_SIZE>; 2],
-}
-
-impl PowerReadings {
-    fn push_value(&mut self, ix: usize, val: u16) {
-        self.ring_buffers[ix].push(val);
-    }
-}
-
-async fn init_wifi(
-    timg0: TIMG0,
-    rng: RNG,
-    radio_clk: RADIO_CLK,
-    wifi: WIFI,
-    spawner: &Spawner,
-) -> Stack<'static> {
-    let init = &*mk_static!(
-        EspWifiController<'static>,
-        esp_wifi::init(TimerGroup::new(timg0).timer0, Rng::new(rng), radio_clk).unwrap()
-    );
-
-    let (mut wifi_controller, interfaces) = esp_wifi::wifi::new(init, wifi).unwrap();
-    wifi_controller
-        .set_power_saving(esp_wifi::config::PowerSaveMode::None)
-        .expect("wifi_controller.set_power_saving(...) failed");
-    let wifi_interface = interfaces.sta;
-
-    let config = embassy_net::Config::dhcpv4(Default::default());
-
-    let seed = 1234; // very random, very secure seed
-
-    // Init network stack
-    let (stack, runner) = embassy_net::new(
-        wifi_interface,
-        config,
-        mk_static!(StackResources<3>, StackResources::<3>::new()),
-        seed,
-    );
-    spawner.spawn(connection(wifi_controller)).ok();
-    spawner.spawn(net_task(runner)).ok();
-    loop {
-        if stack.is_link_up() {
-            break;
-        }
-        Timer::after_millis(100).await;
-    }
-
-    println!("Waiting to get IP address...");
-    loop {
-        if let Some(config) = stack.config_v4() {
-            println!("Got IP: {}", config.address);
-            break;
-        }
-        Timer::after_millis(100).await;
-    }
-    stack
-}
-
-#[embassy_executor::task]
-async fn connection(mut controller: WifiController<'static>) {
-    println!("start connection task");
-    println!("Device capabilities: {:?}", controller.capabilities());
-    loop {
-        if esp_wifi::wifi::wifi_state() == WifiState::StaConnected {
-            // wait until we're no longer connected
-            controller.wait_for_event(WifiEvent::StaDisconnected).await;
-            Timer::after_secs(5).await
-        }
-        if !matches!(controller.is_started(), Ok(true)) {
-            let client_config =
-                esp_wifi::wifi::Configuration::Client(esp_wifi::wifi::ClientConfiguration {
-                    ssid: SSID.try_into().unwrap(),
-                    password: PASSWORD.try_into().unwrap(),
-                    ..Default::default()
-                });
-            controller.set_configuration(&client_config).unwrap();
-            println!("Starting wifi");
-            controller.start().unwrap();
-            println!("Wifi started!");
-        }
-        println!("About to connect...");
-
-        match controller.connect() {
-            Ok(_) => println!("Wifi connected!"),
-            Err(e) => {
-                println!("Failed to connect to wifi: {e:?}");
-                Timer::after_secs(5).await
-            }
-        }
-    }
-}
-
-#[embassy_executor::task]
-async fn net_task(mut stack: Runner<'static, WifiDevice<'static>>) {
-    stack.run().await
 }
 
 #[embassy_executor::task]
@@ -648,57 +417,4 @@ async fn send_receive_loop<'a>(
 pub async fn change_led_color(color: RGB8, led_mutex: &'static LedMutex) {
     let mut led = led_mutex.lock().await;
     led.write(Some(color)).ok();
-}
-
-#[allow(dead_code)]
-async fn run_tests(modbus_mutex: &'static ModbusMutex, led_mutex: &'static LedMutex) {
-    run_modbus_test(modbus_mutex, led_mutex).await;
-    run_uart_loopback_test(modbus_mutex).await;
-    run_adc_test().await;
-}
-
-#[allow(dead_code)]
-async fn run_modbus_test(modbus_mutex: &'static ModbusMutex, led_mutex: &'static LedMutex) {
-    let mut modbus = modbus_mutex.lock().await;
-    match with_timeout(Duration::from_millis(100), modbus.test_holding()).await {
-        Ok(Ok(true)) => {
-            log::info!("test modbus => success");
-            change_led_color(GREEN, led_mutex).await;
-        }
-        Ok(Ok(false)) => log::error!("test modbus => buffers are not equal"),
-        Ok(Err(e)) => {
-            log::error!("test modbus => modbus error: {:?}", e);
-            change_led_color(ORANGE, led_mutex).await;
-        }
-        Err(_) => {
-            log::error!("test modbus => timeout");
-            change_led_color(PURPLE, led_mutex).await;
-        }
-    }
-}
-
-#[allow(dead_code)]
-async fn run_uart_loopback_test(modbus_mutex: &'static ModbusMutex) {
-    let mut modbus = modbus_mutex.lock().await;
-    match with_timeout(Duration::from_millis(100), modbus.test_loopback()).await {
-        Ok(Ok(true)) => log::info!("test loopback => success"),
-        Ok(Ok(false)) => log::error!("test loopback => buffers are not equal"),
-        _ => log::error!("test loopback => sth went wrong"),
-    }
-}
-
-#[allow(dead_code)]
-async fn run_adc_test() {
-    let mut print_buffer: [u16; 20] = [0; 20];
-    if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
-        adc_readings.ring_buffers[0]
-            .get_range(RING_BUFFER_SIZE - 20..RING_BUFFER_SIZE, &mut print_buffer);
-        log::info!("{:?}", print_buffer);
-        adc_readings.ring_buffers[1]
-            .get_range(RING_BUFFER_SIZE - 20..RING_BUFFER_SIZE, &mut print_buffer);
-        log::info!("{:?}", print_buffer);
-        adc_readings.ring_buffers[2]
-            .get_range(RING_BUFFER_SIZE - 20..RING_BUFFER_SIZE, &mut print_buffer);
-        log::info!("{:?}", print_buffer);
-    }
 }
