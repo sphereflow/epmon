@@ -2,7 +2,7 @@ use crate::max485::Max485ModbusError;
 use core::{fmt::Write, str::FromStr};
 use embassy_net::tcp::TcpSocket;
 use embassy_time::TimeoutError;
-use heapless::{String, Vec};
+use heapless::String;
 
 pub struct LastError {
     msg: Option<String<256>>,
@@ -18,8 +18,8 @@ impl LastError {
         }
     }
 
-    pub fn from_timeout_get_register_or_holding(
-        possible_err: &Result<Result<Vec<u16, 128>, Max485ModbusError>, TimeoutError>,
+    pub fn from_timeout_modbus_result<T>(
+        possible_err: &Result<Result<T, Max485ModbusError>, TimeoutError>,
     ) -> Self {
         let msg = match possible_err {
             Ok(Ok(_)) => None,

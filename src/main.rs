@@ -267,7 +267,7 @@ async fn aquire_power_readings_task(
                 power_pv_acc += power;
             } else {
                 let mut last_error = last_error_mutex.lock().await;
-                *last_error = LastError::from_timeout_get_register_or_holding(&register);
+                *last_error = LastError::from_timeout_modbus_result(&register);
                 log::error!("aquire_power_readings_task: timeout or modbus error");
             }
             interval_ticker.next().await;
@@ -569,7 +569,7 @@ async fn send_receive_loop<'a>(
                     .await
                 };
                 let mut last_error = last_error_mutex.lock().await;
-                *last_error = LastError::from_timeout_get_register_or_holding(&register);
+                *last_error = LastError::from_timeout_modbus_result(&register);
                 if let Ok(Ok(values)) = register {
                     let bytes: Vec<u8, 256> =
                         values.iter().flat_map(|val| val.to_be_bytes()).collect();
@@ -600,7 +600,7 @@ async fn send_receive_loop<'a>(
                     .await
                 };
                 let mut last_error = last_error_mutex.lock().await;
-                *last_error = LastError::from_timeout_get_register_or_holding(&register);
+                *last_error = LastError::from_timeout_modbus_result(&register);
                 if let Ok(Ok(values)) = register {
                     let bytes: Vec<u8, 256> =
                         values.iter().flat_map(|val| val.to_be_bytes()).collect();
@@ -623,6 +623,8 @@ async fn send_receive_loop<'a>(
                         .set_holdings(register_address, &new_holding_values)
                         .await
                 };
+                let mut last_error = last_error_mutex.lock().await;
+                *last_error = LastError::from_timeout_modbus_result(&Ok(register));
                 if register.is_err() {
                     log::error!("failed to set holding values");
                 }

@@ -315,7 +315,7 @@ impl<'a> embedded_svc::io::asynch::ErrorType for Max485Modbus<'a> {
     type Error = Max485ModbusError;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Max485ModbusError {
     UartRxError(esp_hal::uart::RxError),
     UartTxError(esp_hal::uart::TxError),
