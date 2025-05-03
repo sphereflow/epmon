@@ -155,7 +155,7 @@ async fn main(spawner: Spawner) {
     loop {
         let stats = esp_alloc::HEAP.stats();
         println!("{stats}");
-        Timer::after_secs(1).await;
+        Timer::after_secs(60).await;
     }
 }
 
