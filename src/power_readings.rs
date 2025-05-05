@@ -1,14 +1,14 @@
 use embassy_time::{with_timeout, Duration, Ticker};
 
 use crate::{
-    last_error::LastError, ringbuffer::RingBuffer, LastErrorMutex, ModbusMutex, POWER_INTERVAL_MS,
+    net_log::NetLog, ringbuffer::RingBuffer, ModbusMutex, NetLogMutex, POWER_INTERVAL_MS,
     POWER_READINGS, RING_BUFFER_SIZE,
 };
 
 #[embassy_executor::task]
 pub async fn aquire_power_readings_task(
     modbus_mutex: &'static ModbusMutex,
-    last_error_mutex: &'static LastErrorMutex,
+    last_error_mutex: &'static NetLogMutex,
 ) {
     loop {
         let mut power_pv_acc = 0;
@@ -28,7 +28,7 @@ pub async fn aquire_power_readings_task(
                 power_pv_acc += power;
             } else {
                 let mut last_error = last_error_mutex.lock().await;
-                *last_error = LastError::from_timeout_modbus_result(&register);
+                *last_error = NetLog::from_timeout_modbus_result(&register);
                 log::error!("aquire_power_readings_task: timeout or modbus error");
             }
             interval_ticker.next().await;

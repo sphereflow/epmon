@@ -4,16 +4,16 @@ use embassy_net::tcp::TcpSocket;
 use embassy_time::TimeoutError;
 use heapless::String;
 
-pub struct LastError {
-    msg: Option<String<256>>,
+pub struct NetLog {
+    msg: Option<String<2048>>,
 }
 
-impl LastError {
+impl NetLog {
     pub fn new() -> Self {
-        LastError {
+        NetLog {
             msg: Some(
                 String::from_str("first log message")
-                    .expect("LastError::new() : could not convert str to String"),
+                    .expect("NetLog::new() : could not convert str to String"),
             ),
         }
     }
@@ -36,7 +36,22 @@ impl LastError {
                 Some(msg)
             }
         };
-        LastError { msg }
+        NetLog { msg }
+    }
+
+    pub fn append(&mut self, s: &str) {
+        if let Some(m) = self.msg.as_mut() {
+            m.push_str(s).expect("NetLog::append : failed");
+        } else {
+            let m = String::from_str(s).expect("NetLog::append : failed");
+            self.msg = Some(m)
+        }
+    }
+
+    pub fn append_log(&mut self, other: &NetLog) {
+        if let Some(m) = &other.msg {
+            self.append(m)
+        }
     }
 
     pub async fn send(
@@ -59,7 +74,7 @@ impl LastError {
     }
 }
 
-impl Default for LastError {
+impl Default for NetLog {
     fn default() -> Self {
         Self::new()
     }

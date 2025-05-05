@@ -27,8 +27,8 @@ use esp_hal_embassy::main;
 use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
 use esp_println::println;
 use heapless::Vec;
-use last_error::LastError;
 use max485::Max485Modbus;
+use net_log::NetLog;
 use power_readings::PowerReadings;
 use smart_leds::{SmartLedsWrite, RGB8};
 use static_cell::StaticCell;
@@ -36,8 +36,8 @@ use static_cell::StaticCell;
 pub mod adc_readings;
 pub mod command;
 pub mod init_network;
-pub mod last_error;
 pub mod max485;
+pub mod net_log;
 pub mod power_readings;
 pub mod ringbuffer;
 pub mod string_logger;
@@ -59,7 +59,7 @@ static mut TX_BUFFER: [u8; TX_BUFFER_SIZE] = [0; TX_BUFFER_SIZE];
 type LedT = SmartLedsAdapter<esp_hal::rmt::Channel<Blocking, 0>, 25>;
 type LedMutex = Mutex<CriticalSectionRawMutex, LedT>;
 type ModbusMutex = Mutex<NoopRawMutex, Max485Modbus<'static>>;
-type LastErrorMutex = Mutex<NoopRawMutex, LastError>;
+type NetLogMutex = Mutex<NoopRawMutex, NetLog>;
 
 #[main]
 async fn main(spawner: Spawner) {
@@ -68,8 +68,8 @@ async fn main(spawner: Spawner) {
     // string_logger::init_string_logger();
     let peripherals = esp_hal::init(Config::default());
 
-    static LAST_ERROR: StaticCell<LastErrorMutex> = StaticCell::new();
-    let last_error_mutex = LAST_ERROR.init(Mutex::new(LastError::new()));
+    static NET_LOG: StaticCell<NetLogMutex> = StaticCell::new();
+    let net_log_mutex = NET_LOG.init(Mutex::new(NetLog::new()));
 
     // set up adc
     let mut adc_config = AdcConfig::new();
@@ -124,7 +124,7 @@ async fn main(spawner: Spawner) {
 
         if let Err(err) = spawner.spawn(power_readings::aquire_power_readings_task(
             modbus_mutex,
-            last_error_mutex,
+            net_log_mutex,
         )) {
             log::error!("could not spawn power task");
             log::error!("{err:?}");
@@ -141,7 +141,7 @@ async fn main(spawner: Spawner) {
         spawner
             .spawn(network_handler(
                 stack,
-                last_error_mutex,
+                net_log_mutex,
                 modbus_mutex,
                 led_mutex,
             ))
@@ -162,7 +162,7 @@ async fn main(spawner: Spawner) {
 #[embassy_executor::task]
 async fn network_handler(
     stack: Stack<'static>,
-    last_error_mutex: &'static LastErrorMutex,
+    net_log_mutex: &'static NetLogMutex,
     modbus_mutex: &'static ModbusMutex,
     led_mutex: &'static LedMutex,
 ) {
@@ -219,7 +219,7 @@ async fn network_handler(
                     &mut socket,
                     &mut command_buf,
                     &mut send_buf,
-                    last_error_mutex,
+                    net_log_mutex,
                     modbus_mutex,
                 ),
             )
@@ -244,7 +244,7 @@ async fn send_receive_loop<'a>(
     socket: &mut TcpSocket<'a>,
     command_buf: &mut [u8],
     send_buf: &mut [u8],
-    last_error_mutex: &'static LastErrorMutex,
+    net_log_mutex: &'static NetLogMutex,
     modbus_mutex: &'static ModbusMutex,
 ) -> Result<(), embassy_net::tcp::Error> {
     socket.read(command_buf).await?;
@@ -337,8 +337,8 @@ async fn send_receive_loop<'a>(
                     )
                     .await
                 };
-                let mut last_error = last_error_mutex.lock().await;
-                *last_error = LastError::from_timeout_modbus_result(&register);
+                let mut net_log = net_log_mutex.lock().await;
+                *net_log = NetLog::from_timeout_modbus_result(&register);
                 if let Ok(Ok(values)) = register {
                     let bytes: Vec<u8, 256> =
                         values.iter().flat_map(|val| val.to_be_bytes()).collect();
@@ -368,8 +368,8 @@ async fn send_receive_loop<'a>(
                     )
                     .await
                 };
-                let mut last_error = last_error_mutex.lock().await;
-                *last_error = LastError::from_timeout_modbus_result(&register);
+                let mut net_log = net_log_mutex.lock().await;
+                *net_log = NetLog::from_timeout_modbus_result(&register);
                 if let Ok(Ok(values)) = register {
                     let bytes: Vec<u8, 256> =
                         values.iter().flat_map(|val| val.to_be_bytes()).collect();
@@ -392,8 +392,8 @@ async fn send_receive_loop<'a>(
                         .set_holdings(register_address, &new_holding_values)
                         .await
                 };
-                let mut last_error = last_error_mutex.lock().await;
-                *last_error = LastError::from_timeout_modbus_result(&Ok(register));
+                let mut net_log = net_log_mutex.lock().await;
+                *net_log = NetLog::from_timeout_modbus_result(&Ok(register));
                 if register.is_err() {
                     log::error!("failed to set holding values");
                 }
@@ -404,8 +404,10 @@ async fn send_receive_loop<'a>(
                 // } else {
                 //     socket.write_all("Could not get log".as_bytes()).await?;
                 // }
-                let mut last_error = last_error_mutex.lock().await;
-                last_error.send(socket, send_buf).await?;
+                let mut net_log = net_log_mutex.lock().await;
+                let modbus = modbus_mutex.lock().await;
+                net_log.append_log(&modbus.net_log);
+                net_log.send(socket, send_buf).await?;
             }
         }
     } else {
