@@ -1,9 +1,8 @@
-use embassy_time::{with_timeout, Duration, Ticker};
-
 use crate::{
-    net_log::NetLog, ringbuffer::RingBuffer, ModbusMutex, NetLogMutex, POWER_INTERVAL_MS,
-    POWER_READINGS, RING_BUFFER_SIZE,
+    net_log::NetLog, ringbuffer::RingBuffer, ModbusMutex, NetLogMutex, MODBUS_TIMEOUT_MS,
+    POWER_INTERVAL_MS, POWER_READINGS, RING_BUFFER_SIZE,
 };
+use embassy_time::{with_timeout, Duration, Ticker};
 
 #[embassy_executor::task]
 pub async fn aquire_power_readings_task(
@@ -18,7 +17,7 @@ pub async fn aquire_power_readings_task(
             let register = {
                 let mut modbus = modbus_mutex.lock().await;
                 with_timeout(
-                    Duration::from_millis(100),
+                    Duration::from_millis(MODBUS_TIMEOUT_MS),
                     modbus.get_input_registers(0x3102, 2),
                 )
                 .await
