@@ -50,6 +50,7 @@ const PORT: u16 = 8900;
 const RING_BUFFER_SIZE: usize = 12000;
 const VOLTAGE_INTERVAL_MS: u16 = 150;
 const POWER_INTERVAL_MS: u16 = 10000;
+const MODBUS_TIMEOUT_MS: u64 = 150;
 const RX_BUFFER_SIZE: usize = 1024;
 const TX_BUFFER_SIZE: usize = 1024;
 // static buffers to not need a huge task-arena
@@ -332,7 +333,7 @@ async fn send_receive_loop<'a>(
                         size
                     );
                     with_timeout(
-                        Duration::from_millis(100),
+                        Duration::from_millis(MODBUS_TIMEOUT_MS),
                         modbus.get_holdings(register_address, size),
                     )
                     .await
@@ -363,7 +364,7 @@ async fn send_receive_loop<'a>(
                     size
                 );
                     with_timeout(
-                        Duration::from_millis(100),
+                        Duration::from_millis(MODBUS_TIMEOUT_MS),
                         modbus.get_input_registers(register_address, size),
                     )
                     .await
