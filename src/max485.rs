@@ -14,7 +14,7 @@ use rmodbus::{client::ModbusRequest, guess_response_frame_len};
 pub struct Max485Modbus<'a> {
     uart: Uart<'a, Async>,
     rw_pin: Output<'a>,
-    unit_id: u8,
+    unit_ids: [u8; 2],
     pub net_log: NetLog,
 }
 
@@ -24,13 +24,14 @@ impl<'a> Max485Modbus<'a> {
             rw_pin,
             uart,
             // for EPEVER Tracer AN the unit id appears to be: 1
-            unit_id: 1,
+            unit_ids: [1, 3],
             net_log: NetLog::new(),
         }
     }
 
     async fn do_request<'r>(
         &mut self,
+        device: Device,
         reg_address: u16,
         request: Request<'r>,
         request_buffer: &mut heapless::Vec<u8, 256>,
@@ -44,7 +45,8 @@ impl<'a> Max485Modbus<'a> {
                 .expect("do_request: could not append to net_log");
             self.net_log.append(&err_string);
         }
-        let mut modbus_request = ModbusRequest::new(self.unit_id, rmodbus::ModbusProto::Rtu);
+        let mut modbus_request =
+            ModbusRequest::new(self.unit_ids[device as usize], rmodbus::ModbusProto::Rtu);
         // read leftover bytes from last modbus transfer
         if self.uart.read_ready()? {
             request_buffer.resize(256, 0)?;
@@ -85,12 +87,14 @@ impl<'a> Max485Modbus<'a> {
     // write consecutive registers
     pub async fn set_holdings(
         &mut self,
+        device: Device,
         reg_address: u16,
         register_values: &[u16],
     ) -> Result<(), Max485ModbusError> {
         let mut request_buffer: heapless::Vec<u8, 256> = heapless::Vec::new();
         let modbus_request = self
             .do_request(
+                device,
                 reg_address,
                 Request::SetHoldings { register_values },
                 &mut request_buffer,
@@ -118,12 +122,14 @@ impl<'a> Max485Modbus<'a> {
 
     pub async fn get_holdings(
         &mut self,
+        device: Device,
         reg_address: u16,
         holding_count: u8,
     ) -> Result<Vec<u16, 128>, Max485ModbusError> {
         let mut request_buffer: Vec<u8, 256> = Vec::new();
         let modbus_request = self
             .do_request(
+                device,
                 reg_address,
                 Request::GetHoldings {
                     holding_count: holding_count as u16,
@@ -164,12 +170,14 @@ impl<'a> Max485Modbus<'a> {
 
     pub async fn get_input_registers(
         &mut self,
+        device: Device,
         reg_address: u16,
         register_count: u8,
     ) -> Result<Vec<u16, 128>, Max485ModbusError> {
         let mut request_buffer: Vec<u8, 256> = Vec::new();
         let modbus_request = self
             .do_request(
+                device,
                 reg_address,
                 Request::GetRegister {
                     register_count: register_count as u16,
@@ -209,12 +217,14 @@ impl<'a> Max485Modbus<'a> {
 
     pub async fn get_coils(
         &mut self,
+        device: Device,
         reg_address: u16,
         coil_count: u16,
     ) -> Result<u8, Max485ModbusError> {
         let mut request_buffer: heapless::Vec<u8, 256> = heapless::Vec::new();
         let modbus_request = self
             .do_request(
+                device,
                 reg_address,
                 Request::ReadCoils { coil_count },
                 &mut request_buffer,
@@ -393,4 +403,10 @@ impl From<rmodbus::ErrorKind> for Max485ModbusError {
     fn from(_value: rmodbus::ErrorKind) -> Self {
         Max485ModbusError::ModbusError
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Device {
+    Tracer,
+    Inverter,
 }

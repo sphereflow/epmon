@@ -27,7 +27,7 @@ use esp_hal_embassy::main;
 use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
 use esp_println::println;
 use heapless::Vec;
-use max485::Max485Modbus;
+use max485::{Device, Max485Modbus};
 use net_log::NetLog;
 use power_readings::PowerReadings;
 use smart_leds::{SmartLedsWrite, RGB8};
@@ -303,9 +303,16 @@ async fn send_receive_loop<'a>(
                         .await?;
                 }
             }
-            Command::GetBuffer(BufferType::InverterPower) => {
+            Command::GetBuffer(BufferType::InverterInputPower) => {
                 if let Some(power_readings) = (*POWER_READINGS.lock().await).as_mut() {
                     power_readings.ring_buffers[1]
+                        .send_diff(socket, send_buf)
+                        .await?;
+                }
+            }
+            Command::GetBuffer(BufferType::InverterOutputPower) => {
+                if let Some(power_readings) = (*POWER_READINGS.lock().await).as_mut() {
+                    power_readings.ring_buffers[2]
                         .send_diff(socket, send_buf)
                         .await?;
                 }
@@ -319,9 +326,10 @@ async fn send_receive_loop<'a>(
                 if let Some(power_readings) = (*POWER_READINGS.lock().await).as_mut() {
                     power_readings.ring_buffers[0].retransmit_whole_buffer_on_next_transmit();
                     power_readings.ring_buffers[1].retransmit_whole_buffer_on_next_transmit();
+                    power_readings.ring_buffers[2].retransmit_whole_buffer_on_next_transmit();
                 }
             }
-            Command::ModbusGetHoldings {
+            Command::ModbusTracerGetHoldings {
                 register_address,
                 size,
             } => {
@@ -334,7 +342,7 @@ async fn send_receive_loop<'a>(
                     );
                     with_timeout(
                         Duration::from_millis(MODBUS_TIMEOUT_MS),
-                        modbus.get_holdings(register_address, size),
+                        modbus.get_holdings(Device::Tracer, register_address, size),
                     )
                     .await
                 };
@@ -352,7 +360,7 @@ async fn send_receive_loop<'a>(
                     }
                 }
             }
-            Command::ModbusGetInputRegisters {
+            Command::ModbusTracerGetInputRegisters {
                 register_address,
                 size,
             } => {
@@ -365,7 +373,7 @@ async fn send_receive_loop<'a>(
                 );
                     with_timeout(
                         Duration::from_millis(MODBUS_TIMEOUT_MS),
-                        modbus.get_input_registers(register_address, size),
+                        modbus.get_input_registers(Device::Tracer, register_address, size),
                     )
                     .await
                 };
@@ -383,14 +391,91 @@ async fn send_receive_loop<'a>(
                     }
                 }
             }
-            Command::ModbusSetHoldings {
+            Command::ModbusTracerSetHoldings {
                 register_address,
                 new_holding_values,
             } => {
                 let register = {
                     let mut modbus = modbus_mutex.lock().await;
                     modbus
-                        .set_holdings(register_address, &new_holding_values)
+                        .set_holdings(Device::Tracer, register_address, &new_holding_values)
+                        .await
+                };
+                let mut net_log = net_log_mutex.lock().await;
+                *net_log = NetLog::from_timeout_modbus_result(&Ok(register));
+                if register.is_err() {
+                    log::error!("failed to set holding values");
+                }
+            }
+            Command::ModbusInverterGetHoldings {
+                register_address,
+                size,
+            } => {
+                let register = {
+                    let mut modbus = modbus_mutex.lock().await;
+                    log::info!(
+                        "trying to get holding values for register_address: {:?}, and size: {}",
+                        register_address,
+                        size
+                    );
+                    with_timeout(
+                        Duration::from_millis(MODBUS_TIMEOUT_MS),
+                        modbus.get_holdings(Device::Inverter, register_address, size),
+                    )
+                    .await
+                };
+                let mut net_log = net_log_mutex.lock().await;
+                *net_log = NetLog::from_timeout_modbus_result(&register);
+                if let Ok(Ok(values)) = register {
+                    let bytes: Vec<u8, 256> =
+                        values.iter().flat_map(|val| val.to_be_bytes()).collect();
+                    log::info!("holding values: {:?}", bytes);
+                    socket.write_all(bytes.as_slice()).await?;
+                } else {
+                    log::error!("modbus error => sending empty buffer");
+                    for _ in 0..(size * 2) {
+                        socket.write(&[0]).await?;
+                    }
+                }
+            }
+            Command::ModbusInverterGetInputRegisters {
+                register_address,
+                size,
+            } => {
+                let register = {
+                    let mut modbus = modbus_mutex.lock().await;
+                    log::info!(
+                    "trying to get input register values for register_address: {:?}, and size: {}",
+                    register_address,
+                    size);
+                    with_timeout(
+                        Duration::from_millis(MODBUS_TIMEOUT_MS),
+                        modbus.get_input_registers(Device::Inverter, register_address, size),
+                    )
+                    .await
+                };
+                let mut net_log = net_log_mutex.lock().await;
+                *net_log = NetLog::from_timeout_modbus_result(&register);
+                if let Ok(Ok(values)) = register {
+                    let bytes: Vec<u8, 256> =
+                        values.iter().flat_map(|val| val.to_be_bytes()).collect();
+                    log::info!("register values: {:?}", bytes);
+                    socket.write_all(bytes.as_slice()).await?;
+                } else {
+                    log::error!("modbus error => sending empty buffer");
+                    for _ in 0..(size * 2) {
+                        socket.write(&[0]).await?;
+                    }
+                }
+            }
+            Command::ModbusInverterSetHoldings {
+                register_address,
+                new_holding_values,
+            } => {
+                let register = {
+                    let mut modbus = modbus_mutex.lock().await;
+                    modbus
+                        .set_holdings(Device::Inverter, register_address, &new_holding_values)
                         .await
                 };
                 let mut net_log = net_log_mutex.lock().await;
