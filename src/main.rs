@@ -64,7 +64,7 @@ type NetLogMutex = Mutex<NoopRawMutex, NetLog>;
 
 #[main]
 async fn main(spawner: Spawner) {
-    esp_alloc::heap_allocator!(size: 55 * 1024);
+    esp_alloc::heap_allocator!(size: 60 * 1024);
     esp_println::logger::init_logger_from_env();
     // string_logger::init_string_logger();
     let peripherals = esp_hal::init(Config::default());

@@ -48,6 +48,7 @@ impl<const SIZE: usize> RingBuffer<SIZE> {
         send_buf: &mut [u8],
     ) -> Result<(), embassy_net::tcp::Error> {
         let transmission_size = 2 * ((self.current_ix + SIZE - self.transmission_ix) % SIZE);
+        log::info!("transmission_size: {transmission_size}");
         send_buf[..4].clone_from_slice(&transmission_size.to_be_bytes());
         socket.write_all(&send_buf[..4]).await?;
 
