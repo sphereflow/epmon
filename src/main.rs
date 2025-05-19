@@ -50,7 +50,7 @@ const PORT: u16 = 8900;
 const RING_BUFFER_SIZE: usize = 12000;
 const VOLTAGE_INTERVAL_MS: u16 = 150;
 const POWER_INTERVAL_MS: u16 = 10000;
-const MODBUS_TIMEOUT_MS: u64 = 150;
+const MODBUS_TIMEOUT_MS: u64 = 200;
 const RX_BUFFER_SIZE: usize = 1024;
 const TX_BUFFER_SIZE: usize = 1024;
 // static buffers to not need a huge task-arena
