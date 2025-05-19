@@ -42,7 +42,7 @@ impl<'a> Max485Modbus<'a> {
         if let Err(e) = self.uart.check_for_rx_errors() {
             log::error!("Max485Modbus::do_request(...) -> RxError: {:?}", e);
             let mut err_string: String<128> = String::new();
-            core::fmt::Write::write_fmt(&mut err_string, format_args!("previous RxError: {e}"))
+            core::fmt::Write::write_fmt(&mut err_string, format_args!("previous RxError: {e}\n"))
                 .expect("do_request: could not append to net_log");
             self.net_log.append(&err_string);
         }
@@ -54,7 +54,7 @@ impl<'a> Max485Modbus<'a> {
             let num_bytes = self.read(request_buffer).await?;
             log::warn!("uart had leftovers from last meal! size: {}", num_bytes);
             request_buffer.clear();
-            self.net_log.append("read_ready returned true");
+            self.net_log.append("read_ready returned true\n");
         }
         match request {
             Request::SetHoldings { register_values } => {
@@ -136,7 +136,7 @@ impl<'a> Max485Modbus<'a> {
             )
             .await?;
         self.net_log
-            .append("Max485Modbus::get_holdings => Max485Modbus::do_request(...) successful");
+            .append("Max485Modbus::get_holdings => Max485Modbus::do_request(...) successful\n");
 
         // reuse the request_buffer for the response buffer
         request_buffer.clear();
@@ -146,7 +146,7 @@ impl<'a> Max485Modbus<'a> {
         response_buffer.resize(3, 0)?;
         self.read_exact(&mut response_buffer).await?;
         self.net_log.append(
-            "Max485Modbus::get_holdings => first part of the response frame successfully read",
+            "Max485Modbus::get_holdings => first part of the response frame successfully read\n",
         );
         log::info!("got response frame: {:?}", response_buffer);
         let response_frame_len =
@@ -155,7 +155,7 @@ impl<'a> Max485Modbus<'a> {
         response_buffer.resize(response_frame_len as usize, 0)?;
         self.read_exact(&mut response_buffer[3..]).await?;
         self.net_log.append(
-            "Max485Modbus::get_holdings => second part of the response frame successfully read",
+            "Max485Modbus::get_holdings => second part of the response frame successfully read\n",
         );
         log::info!("got response frame: {:?}", response_buffer);
         let mut val_array: Vec<u16, 128> = Vec::new();
@@ -181,7 +181,7 @@ impl<'a> Max485Modbus<'a> {
             )
             .await?;
         self.net_log.append(
-            "Max485Modbus::get_input_registers => Max485Modbus::do_request(...) successful",
+            "Max485Modbus::get_input_registers => Max485Modbus::do_request(...) successful\n",
         );
 
         // reuse the request_buffer for the response buffer
@@ -192,14 +192,14 @@ impl<'a> Max485Modbus<'a> {
         response_buffer.resize(3, 0)?;
         self.read_exact(&mut response_buffer).await?;
         self.net_log.append(
-            "Max485Modbus::get_input_registers => first part of the response frame successfully read",
+            "Max485Modbus::get_input_registers => first part of the response frame successfully read\n",
         );
         let response_frame_len =
             guess_response_frame_len(&response_buffer, rmodbus::ModbusProto::Rtu)?;
         response_buffer.resize(response_frame_len as usize, 0)?;
         self.read_exact(&mut response_buffer[3..]).await?;
         self.net_log.append(
-            "Max485Modbus::get_input_registers => second part of the response frame successfully read",
+            "Max485Modbus::get_input_registers => second part of the response frame successfully read\n",
         );
         let mut val_array: Vec<u16, 128> = Vec::new();
         modbus_request.parse_u16(&response_buffer, &mut val_array)?;

@@ -12,8 +12,7 @@ impl NetLog {
     pub fn new() -> Self {
         NetLog {
             msg: Some(
-                String::from_str("first log message")
-                    .expect("NetLog::new() : could not convert str to String"),
+                String::from_str("---\n").expect("NetLog::new() : could not convert str to String"),
             ),
         }
     }
