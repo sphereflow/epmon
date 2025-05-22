@@ -38,6 +38,8 @@ impl<'a> Max485Modbus<'a> {
         request_buffer: &mut heapless::Vec<u8, 256>,
     ) -> Result<ModbusRequest, Max485ModbusError> {
         self.net_log = NetLog::new();
+        // wait for a short period so that a received and an immediatly afterwards transmitted package don't look like one package
+        Timer::after_millis(5).await;
         // logs rx errors from previous requests and 'clears' them
         if let Err(e) = self.uart.check_for_rx_errors() {
             log::error!("Max485Modbus::do_request(...) -> RxError: {:?}", e);

@@ -13,6 +13,8 @@ pub async fn aquire_power_readings_task(
         let mut power_pv_acc = 0;
         let mut power_inverter_input_acc = 0;
         let mut power_inverter_output_acc = 0;
+        // number of successfully read values
+        let mut n_success = [0; 3];
         let mut interval_ticker =
             Ticker::every(Duration::from_millis(POWER_INTERVAL_MS as u64 / 10));
         for _ in 0..10 {
@@ -42,6 +44,7 @@ pub async fn aquire_power_readings_task(
             };
             if let Ok(Ok(values)) = register_tracer {
                 let power = (values[0] as u32) + ((values[1] as u32) << 16);
+                n_success[0] += 1;
                 power_pv_acc += power;
             } else {
                 let mut last_error = last_error_mutex.lock().await;
@@ -50,6 +53,7 @@ pub async fn aquire_power_readings_task(
             }
             if let Ok(Ok(values)) = register_inverter_input {
                 let power = (values[0] as u32) + ((values[1] as u32) << 16);
+                n_success[1] += 1;
                 power_inverter_input_acc += power;
             } else {
                 let mut last_error = last_error_mutex.lock().await;
@@ -58,6 +62,7 @@ pub async fn aquire_power_readings_task(
             }
             if let Ok(Ok(values)) = register_inverter_output {
                 let power = (values[0] as u32) + ((values[1] as u32) << 16);
+                n_success[2] += 1;
                 power_inverter_output_acc += power;
             } else {
                 let mut last_error = last_error_mutex.lock().await;
@@ -68,9 +73,23 @@ pub async fn aquire_power_readings_task(
         }
         {
             if let Some(power_readings) = (*POWER_READINGS.lock().await).as_mut() {
-                power_readings.push_value(0, (power_pv_acc / 1000) as u16);
-                power_readings.push_value(1, (power_inverter_input_acc / 1000) as u16);
-                power_readings.push_value(2, (power_inverter_output_acc / 1000) as u16);
+                if n_success[0] != 0 {
+                    power_readings.push_value(0, (power_pv_acc / (100 * n_success[0])) as u16);
+                } else {
+                    power_readings.push_value(0, 0);
+                }
+                if n_success[1] != 0 {
+                    power_readings
+                        .push_value(1, (power_inverter_input_acc / (100 * n_success[1])) as u16);
+                } else {
+                    power_readings.push_value(1, 0);
+                }
+                if n_success[2] != 0 {
+                    power_readings
+                        .push_value(2, (power_inverter_output_acc / (100 * n_success[2])) as u16);
+                } else {
+                    power_readings.push_value(2, 0);
+                }
             }
         }
     }
