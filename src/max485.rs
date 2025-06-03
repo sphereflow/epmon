@@ -3,7 +3,6 @@ use embassy_time::Duration;
 use embassy_time::Timer;
 use embedded_io::ReadExactError;
 use embedded_io_async::Read;
-use embedded_io_async::ReadReady;
 use embedded_io_async::Write;
 use esp_hal::uart::IoError;
 use esp_hal::Async;
@@ -51,7 +50,7 @@ impl<'a> Max485Modbus<'a> {
         let mut modbus_request =
             ModbusRequest::new(self.unit_ids[device as usize], rmodbus::ModbusProto::Rtu);
         // read leftover bytes from last modbus transfer
-        if self.uart.read_ready()? {
+        if self.uart.read_ready() {
             request_buffer.resize(256, 0)?;
             let num_bytes = self.read(request_buffer).await?;
             log::warn!("uart had leftovers from last meal! size: {}", num_bytes);
@@ -289,7 +288,20 @@ impl<'a> Write for Max485Modbus<'a> {
     }
 
     async fn flush(&mut self) -> Result<(), Self::Error> {
-        self.uart.flush_async().await.map_err(|e| e.into())
+        self.uart.flush_async().await?;
+
+        // for debugging purposes only
+        unsafe {
+            let txfifo_cnt: u8 = esp32c6::UART0::steal().status().read().txfifo_cnt().bits();
+            let mut err_string: String<128> = String::new();
+            core::fmt::Write::write_fmt(
+                &mut err_string,
+                format_args!("flush(): txfifo_cnt after flush: {txfifo_cnt}\n"),
+            )
+            .expect("flush(): could not append to net_log");
+            self.net_log.append(&err_string);
+        };
+        Ok(())
     }
 
     async fn write_all(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
@@ -305,7 +317,8 @@ impl<'a> Write for Max485Modbus<'a> {
 impl<'a> embedded_io::Read for Max485Modbus<'a> {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, Self::Error> {
         self.rw_pin.set_low();
-        embedded_io::Read::read(&mut self.uart, buf).map_err(|e| e.into())
+        let count = embedded_io::Read::read(&mut self.uart, buf)?;
+        Ok(count)
     }
 
     fn read_exact(

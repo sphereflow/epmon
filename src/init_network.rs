@@ -25,10 +25,10 @@ macro_rules! mk_static {
 }
 
 pub async fn init_wifi(
-    timg0: TIMG0,
-    rng: RNG,
-    radio_clk: RADIO_CLK,
-    wifi: WIFI,
+    timg0: TIMG0<'static>,
+    rng: RNG<'_>,
+    radio_clk: RADIO_CLK<'static>,
+    wifi: WIFI<'static>,
     spawner: &Spawner,
 ) -> Stack<'static> {
     let init = &*mk_static!(
@@ -86,8 +86,8 @@ async fn connection(mut controller: WifiController<'static>) {
         if !matches!(controller.is_started(), Ok(true)) {
             let client_config =
                 esp_wifi::wifi::Configuration::Client(esp_wifi::wifi::ClientConfiguration {
-                    ssid: SSID.try_into().unwrap(),
-                    password: PASSWORD.try_into().unwrap(),
+                    ssid: SSID.into(),
+                    password: PASSWORD.into(),
                     ..Default::default()
                 });
             controller.set_configuration(&client_config).unwrap();

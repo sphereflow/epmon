@@ -1,19 +1,18 @@
 use embassy_time::{Duration, Ticker, Timer};
 use esp_hal::{
     analog::adc::{Adc, AdcCalScheme, AdcChannel, AdcPin, RegisterAccess},
-    gpio::GpioPin,
-    peripherals::ADC1,
+    peripherals::{ADC1, GPIO4, GPIO5, GPIO6},
     Blocking,
 };
 
 use crate::{ringbuffer::RingBuffer, ADC_READINGS, RING_BUFFER_SIZE, VOLTAGE_INTERVAL_MS};
 
-pub type AdcCal = esp_hal::analog::adc::AdcCalBasic<ADC1>;
+pub type AdcCal = esp_hal::analog::adc::AdcCalBasic<ADC1<'static>>;
 // pub type AdcCal = esp_hal::analog::adc::AdcCalLine<ADC1>;
 // pub type AdcCal = esp_hal::analog::adc::AdcCalCurve<ADC1>;
-type PIN0 = AdcPin<GpioPin<4>, ADC1, AdcCal>;
-type PIN1 = AdcPin<GpioPin<5>, ADC1, AdcCal>;
-type PIN2 = AdcPin<GpioPin<6>, ADC1, AdcCal>;
+type PIN0 = AdcPin<GPIO4<'static>, ADC1<'static>, AdcCal>;
+type PIN1 = AdcPin<GPIO5<'static>, ADC1<'static>, AdcCal>;
+type PIN2 = AdcPin<GPIO6<'static>, ADC1<'static>, AdcCal>;
 
 #[derive(Default, Debug)]
 pub struct AdcReadings {
@@ -28,7 +27,7 @@ impl AdcReadings {
 
 #[embassy_executor::task]
 pub async fn aquire_adc_readings_task(
-    mut adc1: Adc<'static, ADC1, Blocking>,
+    mut adc1: Adc<'static, ADC1<'static>, Blocking>,
     mut pin0: PIN0,
     mut pin1: PIN1,
     mut pin2: PIN2,
@@ -66,25 +65,19 @@ pub async fn aquire_adc_readings_task(
 
 trait ReadAdc {
     type ADC: esp_hal::analog::adc::RegisterAccess;
-    async fn read_adc<const GPIO_NUM: u8>(
-        &mut self,
-        pin: &mut AdcPin<GpioPin<GPIO_NUM>, Self::ADC, AdcCal>,
-    ) -> u16
+    async fn read_adc<GpioPin>(&mut self, pin: &mut AdcPin<GpioPin, Self::ADC, AdcCal>) -> u16
     where
-        GpioPin<GPIO_NUM>: AdcChannel;
+        GpioPin: AdcChannel;
 }
 
-impl<'a, ADC: RegisterAccess> ReadAdc for Adc<'a, ADC, Blocking>
+impl<'a, ADC: RegisterAccess + 'a> ReadAdc for Adc<'a, ADC, Blocking>
 where
     AdcCal: AdcCalScheme<ADC>,
 {
     type ADC = ADC;
-    async fn read_adc<const GPIO_NUM: u8>(
-        &mut self,
-        pin: &mut AdcPin<GpioPin<GPIO_NUM>, ADC, AdcCal>,
-    ) -> u16
+    async fn read_adc<GpioPin>(&mut self, pin: &mut AdcPin<GpioPin, ADC, AdcCal>) -> u16
     where
-        GpioPin<GPIO_NUM>: AdcChannel,
+        GpioPin: AdcChannel,
     {
         loop {
             if let Ok(val) = self.read_oneshot(pin) {

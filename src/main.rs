@@ -5,6 +5,7 @@
 #![feature(generic_const_exprs)]
 #![feature(impl_trait_in_assoc_type)]
 
+use crate::smartled::SmartLedsAdapter;
 use adc_readings::{aquire_adc_readings_task, AdcCal, AdcReadings};
 use command::{BufferType, Command, COMMAND_SIZE};
 use embassy_executor::Spawner;
@@ -24,7 +25,6 @@ use esp_hal::timer::timg::TimerGroup;
 use esp_hal::uart::Uart;
 use esp_hal::{Async, Blocking, Config};
 use esp_hal_embassy::main;
-use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
 use esp_println::println;
 use heapless::Vec;
 use max485::{Device, Max485Modbus};
@@ -40,6 +40,7 @@ pub mod max485;
 pub mod net_log;
 pub mod power_readings;
 pub mod ringbuffer;
+pub mod smartled;
 pub mod string_logger;
 pub mod tests;
 
@@ -93,7 +94,7 @@ async fn main(spawner: Spawner) {
     // set up smartled
     static LED: StaticCell<LedMutex> = StaticCell::new();
     let rmt = Rmt::new(peripherals.RMT, Rate::from_mhz(80)).unwrap();
-    let rmt_buffer = smartLedBuffer!(1);
+    let rmt_buffer = smart_led_buffer!(1);
     let led_adapter = SmartLedsAdapter::new(rmt.channel0, peripherals.GPIO8, rmt_buffer);
     let led_mutex = LED.init(Mutex::new(led_adapter));
     {
