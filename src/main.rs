@@ -81,7 +81,7 @@ async fn main(spawner: Spawner) {
         adc_config.enable_pin_with_cal::<_, AdcCal>(peripherals.GPIO5, Attenuation::_0dB);
     let adc_pin2 =
         adc_config.enable_pin_with_cal::<_, AdcCal>(peripherals.GPIO6, Attenuation::_0dB);
-    let adc1 = Adc::new(peripherals.ADC1, adc_config);
+    let adc1 = Adc::new(peripherals.ADC1, adc_config).into_async();
     {
         let mut adc_readings = ADC_READINGS.lock().await;
         adc_readings.replace(AdcReadings::default());

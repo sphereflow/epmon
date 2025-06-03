@@ -1,8 +1,8 @@
-use embassy_time::{Duration, Ticker, Timer};
+use embassy_time::{Duration, Ticker};
 use esp_hal::{
-    analog::adc::{Adc, AdcCalScheme, AdcChannel, AdcPin, RegisterAccess},
+    analog::adc::{Adc, AdcPin},
     peripherals::{ADC1, GPIO4, GPIO5, GPIO6},
-    Blocking,
+    Async,
 };
 
 use crate::{ringbuffer::RingBuffer, ADC_READINGS, RING_BUFFER_SIZE, VOLTAGE_INTERVAL_MS};
@@ -27,7 +27,7 @@ impl AdcReadings {
 
 #[embassy_executor::task]
 pub async fn aquire_adc_readings_task(
-    mut adc1: Adc<'static, ADC1<'static>, Blocking>,
+    mut adc1: Adc<'static, ADC1<'static>, Async>,
     mut pin0: PIN0,
     mut pin1: PIN1,
     mut pin2: PIN2,
@@ -42,11 +42,11 @@ pub async fn aquire_adc_readings_task(
         let mut r2_acc = 0;
         // accumulate values
         for _ in 0..10 {
-            r0_acc += adc1.read_adc(&mut pin0).await;
+            r0_acc += adc1.read_oneshot(&mut pin0).await;
             sub_ticker.next().await;
-            r1_acc += adc1.read_adc(&mut pin1).await;
+            r1_acc += adc1.read_oneshot(&mut pin1).await;
             sub_ticker.next().await;
-            r2_acc += adc1.read_adc(&mut pin2).await;
+            r2_acc += adc1.read_oneshot(&mut pin2).await;
             sub_ticker.next().await;
         }
         // average them out
@@ -59,31 +59,6 @@ pub async fn aquire_adc_readings_task(
                 adc_readings.push_value(1_usize, r1);
                 adc_readings.push_value(2_usize, r2);
             }
-        }
-    }
-}
-
-trait ReadAdc {
-    type ADC: esp_hal::analog::adc::RegisterAccess;
-    async fn read_adc<GpioPin>(&mut self, pin: &mut AdcPin<GpioPin, Self::ADC, AdcCal>) -> u16
-    where
-        GpioPin: AdcChannel;
-}
-
-impl<'a, ADC: RegisterAccess + 'a> ReadAdc for Adc<'a, ADC, Blocking>
-where
-    AdcCal: AdcCalScheme<ADC>,
-{
-    type ADC = ADC;
-    async fn read_adc<GpioPin>(&mut self, pin: &mut AdcPin<GpioPin, ADC, AdcCal>) -> u16
-    where
-        GpioPin: AdcChannel,
-    {
-        loop {
-            if let Ok(val) = self.read_oneshot(pin) {
-                return val;
-            }
-            Timer::after_micros(100).await;
         }
     }
 }
