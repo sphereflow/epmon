@@ -3,10 +3,8 @@ use core::{fmt::Debug, slice::IterMut};
 use esp_hal::{
     clock::Clocks,
     gpio::{Level, OutputPin},
-    rmt::{
-        Error as RmtError, PulseCode, TxChannel, TxChannelAsync, TxChannelConfig, TxChannelCreator,
-        TxChannelCreatorAsync,
-    },
+    rmt::{Channel, Error as RmtError, PulseCode, Tx, TxChannelConfig, TxChannelCreator},
+    Async, Blocking,
 };
 use smart_leds_trait::{SmartLedsWrite, SmartLedsWriteAsync, RGB8};
 
@@ -43,13 +41,15 @@ fn led_pulses_for_clock(src_clock: u32) -> (u32, u32) {
             ((SK68XX_T0H_NS * src_clock) / 1000) as u16,
             Level::Low,
             ((SK68XX_T0L_NS * src_clock) / 1000) as u16,
-        ),
+        )
+        .into(),
         PulseCode::new(
             Level::High,
             ((SK68XX_T1H_NS * src_clock) / 1000) as u16,
             Level::Low,
             ((SK68XX_T1L_NS * src_clock) / 1000) as u16,
-        ),
+        )
+        .into(),
     )
 }
 
@@ -112,29 +112,23 @@ macro_rules! smart_led_buffer {
 
 /// Adapter taking an RMT channel and a specific pin and providing RGB LED
 /// interaction functionality using the `smart-leds` crate
-pub struct SmartLedsAdapter<TX, const BUFFER_SIZE: usize>
-where
-    TX: TxChannel,
-{
-    channel: Option<TX>,
+pub struct SmartLedsAdapter<'a, const BUFFER_SIZE: usize> {
+    channel: Option<Channel<'a, Blocking, Tx>>,
     rmt_buffer: [u32; BUFFER_SIZE],
     pulses: (u32, u32),
 }
 
-impl<'d, TX, const BUFFER_SIZE: usize> SmartLedsAdapter<TX, BUFFER_SIZE>
-where
-    TX: TxChannel,
-{
+impl<'d, const BUFFER_SIZE: usize> SmartLedsAdapter<'d, BUFFER_SIZE> {
     /// Create a new adapter object that drives the pin using the RMT channel.
     pub fn new<C, P: OutputPin + 'd>(
         channel: C,
         pin: P,
         rmt_buffer: [u32; BUFFER_SIZE],
-    ) -> SmartLedsAdapter<TX, BUFFER_SIZE>
+    ) -> SmartLedsAdapter<'d, BUFFER_SIZE>
     where
-        C: TxChannelCreator<'d, TX>,
+        C: TxChannelCreator<'d, Blocking>,
     {
-        let channel = channel.configure(pin, led_config()).unwrap();
+        let channel = channel.configure_tx(pin, led_config()).unwrap();
 
         // Assume the RMT peripheral is set up to use the APB clock
         let src_clock = Clocks::get().apb_clock.as_mhz();
@@ -147,10 +141,7 @@ where
     }
 }
 
-impl<TX, const BUFFER_SIZE: usize> SmartLedsWrite for SmartLedsAdapter<TX, BUFFER_SIZE>
-where
-    TX: TxChannel,
-{
+impl<'a, const BUFFER_SIZE: usize> SmartLedsWrite for SmartLedsAdapter<'a, BUFFER_SIZE> {
     type Error = LedAdapterError;
     type Color = RGB8;
 
@@ -202,23 +193,23 @@ pub const fn buffer_size_async(num_leds: usize) -> usize {
 
 /// Adapter taking an RMT channel and a specific pin and providing RGB LED
 /// interaction functionality.
-pub struct SmartLedsAdapterAsync<Tx, const BUFFER_SIZE: usize> {
-    channel: Tx,
+pub struct SmartLedsAdapterAsync<'a, const BUFFER_SIZE: usize> {
+    channel: Channel<'a, Async, Tx>,
     rmt_buffer: [u32; BUFFER_SIZE],
     pulses: (u32, u32),
 }
 
-impl<'d, Tx: TxChannelAsync, const BUFFER_SIZE: usize> SmartLedsAdapterAsync<Tx, BUFFER_SIZE> {
+impl<'d, const BUFFER_SIZE: usize> SmartLedsAdapterAsync<'d, BUFFER_SIZE> {
     /// Create a new adapter object that drives the pin using the RMT channel.
     pub fn new<C, P: OutputPin + 'd>(
         channel: C,
         pin: P,
         rmt_buffer: [u32; BUFFER_SIZE],
-    ) -> SmartLedsAdapterAsync<Tx, BUFFER_SIZE>
+    ) -> SmartLedsAdapterAsync<'d, BUFFER_SIZE>
     where
-        C: TxChannelCreatorAsync<'d, Tx>,
+        C: TxChannelCreator<'d, Async>,
     {
-        let channel = channel.configure(pin, led_config()).unwrap();
+        let channel = channel.configure_tx(pin, led_config()).unwrap();
 
         // Assume the RMT peripheral is set up to use the APB clock
         let src_clock = Clocks::get().apb_clock.as_mhz();
@@ -259,9 +250,7 @@ impl<'d, Tx: TxChannelAsync, const BUFFER_SIZE: usize> SmartLedsAdapterAsync<Tx,
     }
 }
 
-impl<Tx: TxChannelAsync, const BUFFER_SIZE: usize> SmartLedsWriteAsync
-    for SmartLedsAdapterAsync<Tx, BUFFER_SIZE>
-{
+impl<'a, const BUFFER_SIZE: usize> SmartLedsWriteAsync for SmartLedsAdapterAsync<'a, BUFFER_SIZE> {
     type Error = LedAdapterError;
     type Color = RGB8;
 

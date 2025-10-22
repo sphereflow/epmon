@@ -1,16 +1,9 @@
 use embassy_executor::Spawner;
 use embassy_net::{Runner, Stack, StackResources};
 use embassy_time::Timer;
-use esp_hal::{
-    peripherals::{RADIO_CLK, RNG, TIMG0, WIFI},
-    rng::Rng,
-    timer::timg::TimerGroup,
-};
+use esp_hal::peripherals::WIFI;
 use esp_println::println;
-use esp_wifi::{
-    wifi::{WifiController, WifiDevice, WifiEvent, WifiState},
-    EspWifiController,
-};
+use esp_radio::wifi::{ModeConfig, WifiController, WifiDevice, WifiEvent, WifiStaState};
 
 const SSID: &str = env!("WIFI_SSID");
 const PASSWORD: &str = env!("WIFI_PASS");
@@ -19,26 +12,18 @@ macro_rules! mk_static {
     ($t:ty,$val:expr) => {{
         static STATIC_CELL: static_cell::StaticCell<$t> = static_cell::StaticCell::new();
         #[deny(unused_attributes)]
-        let x = STATIC_CELL.uninit().write(($val));
+        let x = STATIC_CELL.uninit().write($val);
         x
     }};
 }
 
-pub async fn init_wifi(
-    timg0: TIMG0<'static>,
-    rng: RNG<'_>,
-    radio_clk: RADIO_CLK<'static>,
-    wifi: WIFI<'static>,
-    spawner: &Spawner,
-) -> Stack<'static> {
-    let init = &*mk_static!(
-        EspWifiController<'static>,
-        esp_wifi::init(TimerGroup::new(timg0).timer0, Rng::new(rng), radio_clk).unwrap()
-    );
+pub async fn init_wifi(wifi: WIFI<'static>, spawner: &Spawner) -> Stack<'static> {
+    let init = &*mk_static!(esp_radio::Controller<'static>, esp_radio::init().unwrap());
 
-    let (mut wifi_controller, interfaces) = esp_wifi::wifi::new(init, wifi).unwrap();
+    let (mut wifi_controller, interfaces) =
+        esp_radio::wifi::new(init, wifi, Default::default()).unwrap();
     wifi_controller
-        .set_power_saving(esp_wifi::config::PowerSaveMode::None)
+        .set_power_saving(esp_radio::wifi::PowerSaveMode::None)
         .expect("wifi_controller.set_power_saving(...) failed");
     let wifi_interface = interfaces.sta;
 
@@ -78,19 +63,18 @@ async fn connection(mut controller: WifiController<'static>) {
     println!("start connection task");
     println!("Device capabilities: {:?}", controller.capabilities());
     loop {
-        if esp_wifi::wifi::wifi_state() == WifiState::StaConnected {
+        if esp_radio::wifi::sta_state() == WifiStaState::Connected {
             // wait until we're no longer connected
             controller.wait_for_event(WifiEvent::StaDisconnected).await;
             Timer::after_secs(5).await
         }
         if !matches!(controller.is_started(), Ok(true)) {
-            let client_config =
-                esp_wifi::wifi::Configuration::Client(esp_wifi::wifi::ClientConfiguration {
-                    ssid: SSID.into(),
-                    password: PASSWORD.into(),
-                    ..Default::default()
-                });
-            controller.set_configuration(&client_config).unwrap();
+            let client_config = ModeConfig::Client(
+                esp_radio::wifi::ClientConfig::default()
+                    .with_ssid(SSID.into())
+                    .with_password(PASSWORD.into()),
+            );
+            controller.set_config(&client_config).unwrap();
             println!("Starting wifi");
             controller.start().unwrap();
             println!("Wifi started!");

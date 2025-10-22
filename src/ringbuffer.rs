@@ -1,6 +1,6 @@
 use core::ops::Range;
 use embassy_net::tcp::TcpSocket;
-use embedded_svc::io::asynch::Write;
+use embedded_io_async::Write;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RingBuffer<const SIZE: usize> {
@@ -76,7 +76,7 @@ impl<const SIZE: usize> RingBuffer<SIZE> {
         Ok(())
     }
 
-    pub fn iter(&self) -> RingBufferIter<SIZE> {
+    pub fn iter(&self) -> RingBufferIter<'_, SIZE> {
         let current_iter_ix = (self.current_ix + 1) % SIZE;
         RingBufferIter {
             ring_buffer: self,

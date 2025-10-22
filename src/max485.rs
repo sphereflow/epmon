@@ -1,9 +1,11 @@
 use crate::net_log::NetLog;
+use core::fmt::Display;
+use core::fmt::Formatter;
 use embassy_time::Duration;
 use embassy_time::Timer;
-use embedded_io::ReadExactError;
 use embedded_io_async::Read;
 use embedded_io_async::Write;
+use esp_hal::peripherals::UART0;
 use esp_hal::uart::IoError;
 use esp_hal::Async;
 use esp_hal::{gpio::Output, uart::Uart};
@@ -292,7 +294,12 @@ impl<'a> Write for Max485Modbus<'a> {
 
         // for debugging purposes only
         unsafe {
-            let txfifo_cnt: u8 = esp32c6::UART0::steal().status().read().txfifo_cnt().bits();
+            let txfifo_cnt: u8 = UART0::steal()
+                .register_block()
+                .status()
+                .read()
+                .txfifo_cnt()
+                .bits();
             let mut err_string: String<128> = String::new();
             core::fmt::Write::write_fmt(
                 &mut err_string,
@@ -327,8 +334,10 @@ impl<'a> embedded_io::Read for Max485Modbus<'a> {
     ) -> Result<(), embedded_io::ReadExactError<Self::Error>> {
         self.rw_pin.set_low();
         embedded_io::Read::read_exact(&mut self.uart, buf).map_err(|e| match e {
-            ReadExactError::UnexpectedEof => ReadExactError::UnexpectedEof,
-            ReadExactError::Other(e) => ReadExactError::Other(e.into()),
+            embedded_io::ReadExactError::UnexpectedEof => {
+                embedded_io::ReadExactError::UnexpectedEof
+            }
+            embedded_io::ReadExactError::Other(e) => embedded_io::ReadExactError::Other(e.into()),
         })
     }
 }
@@ -341,18 +350,29 @@ impl<'a> embedded_io_async::Read for Max485Modbus<'a> {
             .map_err(|e| e.into())
     }
 
-    async fn read_exact(&mut self, buf: &mut [u8]) -> Result<(), ReadExactError<Self::Error>> {
+    async fn read_exact(
+        &mut self,
+        buf: &mut [u8],
+    ) -> Result<(), embedded_io_async::ReadExactError<Self::Error>> {
         self.rw_pin.set_low();
         embedded_io_async::Read::read_exact(&mut self.uart, buf)
             .await
             .map_err(|e| match e {
-                ReadExactError::UnexpectedEof => ReadExactError::UnexpectedEof,
-                ReadExactError::Other(e) => ReadExactError::Other(e.into()),
+                embedded_io_async::ReadExactError::UnexpectedEof => {
+                    embedded_io_async::ReadExactError::UnexpectedEof
+                }
+                embedded_io_async::ReadExactError::Other(e) => {
+                    embedded_io_async::ReadExactError::Other(e.into())
+                }
             })
     }
 }
 
-impl<'a> embedded_svc::io::asynch::ErrorType for Max485Modbus<'a> {
+impl<'a> embedded_io_async::ErrorType for Max485Modbus<'a> {
+    type Error = Max485ModbusError;
+}
+
+impl<'a> embedded_io::ErrorType for Max485Modbus<'a> {
     type Error = Max485ModbusError;
 }
 
@@ -364,11 +384,44 @@ pub enum Max485ModbusError {
     ModbusError(rmodbus::ErrorKind),
     BufferResizeError,
     ByteCountError,
-    ReadExactError(embedded_io_async::ReadExactError<IoError>),
+    ReadExactErrorBlocking(embedded_io::ReadExactError<IoError>),
+    ReadExactErrorAsync(embedded_io_async::ReadExactError<IoError>),
+    CapacityError,
     UnexpectedEof,
 }
 
-impl embedded_svc::io::Error for Max485ModbusError {
+impl core::error::Error for Max485ModbusError {}
+
+impl Display for Max485ModbusError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Max485ModbusError::UartRxError(rx_error) => write!(f, "UartRxError({rx_error})"),
+            Max485ModbusError::UartTxError(tx_error) => write!(f, "UartTxError({tx_error})"),
+            Max485ModbusError::IoError(io_error) => write!(f, "IoError({io_error})"),
+            Max485ModbusError::ModbusError(error_kind) => write!(f, "ModbusError({error_kind})"),
+            Max485ModbusError::BufferResizeError => write!(f, "BufferResizeError"),
+            Max485ModbusError::ByteCountError => write!(f, "ByteCountError"),
+            Max485ModbusError::ReadExactErrorBlocking(read_exact_error) => {
+                write!(f, "ReadExactErrorBlocking({read_exact_error})")
+            }
+            Max485ModbusError::ReadExactErrorAsync(read_exact_error) => {
+                write!(f, "ReadExactErrorAsync({read_exact_error})")
+            }
+            Max485ModbusError::CapacityError => {
+                write!(f, "CapacityError")
+            }
+            Max485ModbusError::UnexpectedEof => write!(f, "UnexpectedEof"),
+        }
+    }
+}
+
+impl embedded_io_async::Error for Max485ModbusError {
+    fn kind(&self) -> embedded_io_async::ErrorKind {
+        embedded_io_async::ErrorKind::Other
+    }
+}
+
+impl embedded_io::Error for Max485ModbusError {
     fn kind(&self) -> embedded_io::ErrorKind {
         embedded_io::ErrorKind::Other
     }
@@ -394,15 +447,30 @@ impl From<esp_hal::uart::IoError> for Max485ModbusError {
 
 impl From<embedded_io::ReadExactError<IoError>> for Max485ModbusError {
     fn from(value: embedded_io::ReadExactError<IoError>) -> Self {
-        Max485ModbusError::ReadExactError(value)
+        Max485ModbusError::ReadExactErrorBlocking(value)
     }
 }
 
 impl From<embedded_io::ReadExactError<Max485ModbusError>> for Max485ModbusError {
     fn from(value: embedded_io::ReadExactError<Max485ModbusError>) -> Self {
         match value {
-            ReadExactError::UnexpectedEof => Max485ModbusError::UnexpectedEof,
-            ReadExactError::Other(e) => e,
+            embedded_io::ReadExactError::UnexpectedEof => Max485ModbusError::UnexpectedEof,
+            embedded_io::ReadExactError::Other(e) => e,
+        }
+    }
+}
+
+impl From<embedded_io_async::ReadExactError<IoError>> for Max485ModbusError {
+    fn from(value: embedded_io_async::ReadExactError<IoError>) -> Self {
+        Max485ModbusError::ReadExactErrorAsync(value)
+    }
+}
+
+impl From<embedded_io_async::ReadExactError<Max485ModbusError>> for Max485ModbusError {
+    fn from(value: embedded_io_async::ReadExactError<Max485ModbusError>) -> Self {
+        match value {
+            embedded_io_async::ReadExactError::UnexpectedEof => Max485ModbusError::UnexpectedEof,
+            embedded_io_async::ReadExactError::Other(e) => e,
         }
     }
 }
@@ -416,6 +484,12 @@ impl From<()> for Max485ModbusError {
 impl From<rmodbus::ErrorKind> for Max485ModbusError {
     fn from(value: rmodbus::ErrorKind) -> Self {
         Max485ModbusError::ModbusError(value)
+    }
+}
+
+impl From<heapless::CapacityError> for Max485ModbusError {
+    fn from(_value: heapless::CapacityError) -> Self {
+        Max485ModbusError::CapacityError
     }
 }
 

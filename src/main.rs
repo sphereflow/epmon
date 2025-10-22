@@ -6,31 +6,31 @@
 #![feature(impl_trait_in_assoc_type)]
 
 use crate::smartled::SmartLedsAdapter;
-use adc_readings::{aquire_adc_readings_task, AdcCal, AdcReadings};
-use command::{BufferType, Command, COMMAND_SIZE};
+use adc_readings::{AdcCal, AdcReadings, aquire_adc_readings_task};
+use command::{BufferType, COMMAND_SIZE, Command};
 use embassy_executor::Spawner;
 use embassy_net::tcp::TcpSocket;
 use embassy_net::udp::{PacketMetadata, UdpSocket};
 use embassy_net::{IpAddress, IpListenEndpoint, Stack};
 use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
 use embassy_sync::mutex::Mutex;
-use embassy_time::{with_timeout, Duration, Timer};
+use embassy_time::{Duration, Timer, with_timeout};
 use embedded_io_async::*;
-use esp_backtrace as _;
 use esp_hal::analog::adc::{Adc, AdcConfig, Attenuation};
 use esp_hal::gpio::{Level, Output, OutputConfig};
+use esp_hal::interrupt::software::SoftwareInterruptControl;
 use esp_hal::rmt::Rmt;
 use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
 use esp_hal::uart::Uart;
-use esp_hal::{Async, Blocking, Config};
-use esp_hal_embassy::main;
+use esp_hal::{Async, Config};
 use esp_println::println;
+use esp_rtos::main;
 use heapless::Vec;
 use max485::{Device, Max485Modbus};
 use net_log::NetLog;
 use power_readings::PowerReadings;
-use smart_leds::{SmartLedsWrite, RGB8};
+use smart_leds::{RGB8, SmartLedsWrite};
 use static_cell::StaticCell;
 
 pub mod adc_readings;
@@ -58,17 +58,36 @@ const TX_BUFFER_SIZE: usize = 1024;
 static mut RX_BUFFER: [u8; RX_BUFFER_SIZE] = [0; RX_BUFFER_SIZE];
 static mut TX_BUFFER: [u8; TX_BUFFER_SIZE] = [0; TX_BUFFER_SIZE];
 
-type LedT = SmartLedsAdapter<esp_hal::rmt::Channel<Blocking, 0>, 25>;
+type LedT = SmartLedsAdapter<'static, 25>;
 type LedMutex = Mutex<CriticalSectionRawMutex, LedT>;
 type ModbusMutex = Mutex<NoopRawMutex, Max485Modbus<'static>>;
 type NetLogMutex = Mutex<NoopRawMutex, NetLog>;
 
+#[panic_handler]
+fn panic(_: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+
+// This creates a default app-descriptor required by the esp-idf bootloader.
+// For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
+esp_bootloader_esp_idf::esp_app_desc!();
+
 #[main]
-async fn main(spawner: Spawner) {
+async fn main(spawner: Spawner) -> ! {
     esp_alloc::heap_allocator!(size: 60 * 1024);
     esp_println::logger::init_logger_from_env();
     // string_logger::init_string_logger();
+    log::info!("entered main");
+    log::info!("entered main");
     let peripherals = esp_hal::init(Config::default());
+    let timg0 = TimerGroup::new(peripherals.TIMG0);
+    #[cfg(target_arch = "riscv32")]
+    let sw_int = SoftwareInterruptControl::new(peripherals.SW_INTERRUPT);
+    esp_rtos::start(
+        timg0.timer0,
+        #[cfg(target_arch = "riscv32")]
+        sw_int.software_interrupt0,
+    );
 
     static NET_LOG: StaticCell<NetLogMutex> = StaticCell::new();
     let net_log_mutex = NET_LOG.init(Mutex::new(NetLog::new()));
@@ -102,6 +121,7 @@ async fn main(spawner: Spawner) {
         led.write(Some(RGB8::new(130, 0, 0))).ok();
     }
 
+    log::info!("configuring UART");
     static MODBUS: StaticCell<ModbusMutex> = StaticCell::new();
     let uart_config = esp_hal::uart::Config::default();
     if let Ok(uart_peripheral) = Uart::new(peripherals.UART1, uart_config) {
@@ -115,8 +135,6 @@ async fn main(spawner: Spawner) {
         );
         let modbus_mutex = MODBUS.init(Mutex::new(modbus));
 
-        let timg0 = TimerGroup::new(peripherals.TIMG1);
-        esp_hal_embassy::init(timg0.timer0);
         if let Err(err) =
             spawner.spawn(aquire_adc_readings_task(adc1, adc_pin0, adc_pin1, adc_pin2))
         {
@@ -132,14 +150,7 @@ async fn main(spawner: Spawner) {
             log::error!("{err:?}");
         }
 
-        let stack = init_network::init_wifi(
-            peripherals.TIMG0,
-            peripherals.RNG,
-            peripherals.RADIO_CLK,
-            peripherals.WIFI,
-            &spawner,
-        )
-        .await;
+        let stack = init_network::init_wifi(peripherals.WIFI, &spawner).await;
         spawner
             .spawn(network_handler(
                 stack,
@@ -368,10 +379,10 @@ async fn send_receive_loop<'a>(
                 let register = {
                     let mut modbus = modbus_mutex.lock().await;
                     log::info!(
-                    "trying to get input register values for register_address: {:?}, and size: {}",
-                    register_address,
-                    size
-                );
+                        "trying to get input register values for register_address: {:?}, and size: {}",
+                        register_address,
+                        size
+                    );
                     with_timeout(
                         Duration::from_millis(MODBUS_TIMEOUT_MS),
                         modbus.get_input_registers(Device::Tracer, register_address, size),
@@ -446,9 +457,10 @@ async fn send_receive_loop<'a>(
                 let register = {
                     let mut modbus = modbus_mutex.lock().await;
                     log::info!(
-                    "trying to get input register values for register_address: {:?}, and size: {}",
-                    register_address,
-                    size);
+                        "trying to get input register values for register_address: {:?}, and size: {}",
+                        register_address,
+                        size
+                    );
                     with_timeout(
                         Duration::from_millis(MODBUS_TIMEOUT_MS),
                         modbus.get_input_registers(Device::Inverter, register_address, size),
