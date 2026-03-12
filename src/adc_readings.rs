@@ -1,11 +1,11 @@
 use embassy_time::{Duration, Ticker};
 use esp_hal::{
+    Async,
     analog::adc::{Adc, AdcPin},
     peripherals::{ADC1, GPIO4, GPIO5, GPIO6},
-    Async,
 };
 
-use crate::{ringbuffer::RingBuffer, ADC_READINGS, RING_BUFFER_SIZE, VOLTAGE_INTERVAL_MS};
+use crate::{ADC_READINGS, RING_BUFFER_SIZE, VOLTAGE_INTERVAL_MS, ringbuffer::RingBuffer};
 
 pub type AdcCal = esp_hal::analog::adc::AdcCalBasic<ADC1<'static>>;
 // pub type AdcCal = esp_hal::analog::adc::AdcCalLine<ADC1>;
@@ -52,12 +52,14 @@ pub async fn aquire_adc_readings_task(
         // average them out
         r0 = r0_acc / 10;
         r1 = r1_acc / 10;
-        r2 = r2_acc / 10;
+        // PV Voltage attenuation is 11 dB which is a factor of ~ 3.546 ( so multiply by 35 before
+        // dividing by 10)
+        r2 = 35 * (r2_acc as u32) / 10;
         {
             if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
                 adc_readings.push_value(0_usize, r0);
                 adc_readings.push_value(1_usize, r1);
-                adc_readings.push_value(2_usize, r2);
+                adc_readings.push_value(2_usize, r2 as u16);
             }
         }
     }
