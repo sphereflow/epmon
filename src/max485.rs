@@ -5,9 +5,9 @@ use embassy_time::Duration;
 use embassy_time::Timer;
 use embedded_io_async::Read;
 use embedded_io_async::Write;
+use esp_hal::Async;
 use esp_hal::peripherals::UART0;
 use esp_hal::uart::IoError;
-use esp_hal::Async;
 use esp_hal::{gpio::Output, uart::Uart};
 use heapless::String;
 use heapless::Vec;
@@ -372,10 +372,6 @@ impl<'a> embedded_io_async::ErrorType for Max485Modbus<'a> {
     type Error = Max485ModbusError;
 }
 
-impl<'a> embedded_io::ErrorType for Max485Modbus<'a> {
-    type Error = Max485ModbusError;
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Max485ModbusError {
     UartRxError(esp_hal::uart::RxError),
@@ -421,12 +417,6 @@ impl embedded_io_async::Error for Max485ModbusError {
     }
 }
 
-impl embedded_io::Error for Max485ModbusError {
-    fn kind(&self) -> embedded_io::ErrorKind {
-        embedded_io::ErrorKind::Other
-    }
-}
-
 impl From<esp_hal::uart::RxError> for Max485ModbusError {
     fn from(value: esp_hal::uart::RxError) -> Self {
         Max485ModbusError::UartRxError(value)
@@ -442,21 +432,6 @@ impl From<esp_hal::uart::TxError> for Max485ModbusError {
 impl From<esp_hal::uart::IoError> for Max485ModbusError {
     fn from(value: esp_hal::uart::IoError) -> Self {
         Max485ModbusError::IoError(value)
-    }
-}
-
-impl From<embedded_io::ReadExactError<IoError>> for Max485ModbusError {
-    fn from(value: embedded_io::ReadExactError<IoError>) -> Self {
-        Max485ModbusError::ReadExactErrorBlocking(value)
-    }
-}
-
-impl From<embedded_io::ReadExactError<Max485ModbusError>> for Max485ModbusError {
-    fn from(value: embedded_io::ReadExactError<Max485ModbusError>) -> Self {
-        match value {
-            embedded_io::ReadExactError::UnexpectedEof => Max485ModbusError::UnexpectedEof,
-            embedded_io::ReadExactError::Other(e) => e,
-        }
     }
 }
 
