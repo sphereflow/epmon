@@ -52,9 +52,8 @@ pub async fn aquire_adc_readings_task(
         // average them out
         r0 = r0_acc / 10;
         r1 = r1_acc / 10;
-        // PV Voltage attenuation is 11 dB which is a factor of ~ 3.546 ( so multiply by 35 before
-        // dividing by 10)
-        r2 = 35 * (r2_acc as u32) / 10;
+        // PV Voltage attenuation is 11 dB which is a factor of ~ 3.548
+        r2 = (3548_u32 * (r2_acc as u32)) / 10_000_u32;
         {
             if let Some(adc_readings) = (*ADC_READINGS.lock().await).as_mut() {
                 adc_readings.push_value(0_usize, r0);
